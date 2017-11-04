@@ -1,9 +1,15 @@
-import sys
+import sys, os
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 import alsaaudio
 import wave
+from optparse import OptionParser, OptionGroup
+
+globalConfig = {
+	"PcmPlayer": False,
+	"WavFileWriter": False,
+}
 
 def dump_hex(data, desc_str="", token=":", prefix="", preFormat=""):
 	to_write = desc_str + token.join(prefix+"{:02x}".format(ord(c)) for c in data) + "\r\n"
@@ -23,12 +29,15 @@ class Singleton(type):
 
 class PcmPlayer(object):
 	__metaclass__ = Singleton
+	global globalConfig
 	sound_out = alsaaudio.PCM()  # open default sound output
 	sound_out.setchannels(2)  # use only one channel of audio (aka mono)
 	sound_out.setrate(44100)  # how many samples per second
 	sound_out.setformat(alsaaudio.PCM_FORMAT_S16_LE)  # sample format
 
 	def WriteAudio(self, data):
+		if not globalConfig['PcmPlayer']:
+			return
 		data = str(data)
 		self.sound_out.write(data)
 
@@ -36,14 +45,17 @@ class WavFileWriter(object):
 	__metaclass__ = Singleton
 	fileCount = 0
 	fileName = 'record%d.wav' % fileCount
-	record_output = wave.open(fileName, 'w')
-	record_output.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
+	record_output = None
 	audio_data = bytearray()
 
 	def ExtendData(self, data):
+		if not globalConfig['WavFileWriter']:
+			return
 		self.audio_data.extend(data)
 
 	def OpenToWrite(self):
+		if not globalConfig['WavFileWriter']:
+			return
 		if self.record_output != None:
 			self.Close()
 		self.fileName = 'record%d.wav' % self.fileCount
@@ -52,6 +64,8 @@ class WavFileWriter(object):
 		self.record_output.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
 
 	def Close(self):
+		if not globalConfig['WavFileWriter']:
+			return
 		if self.record_output == None:
 			return
 		print("Record len: ", len(self.audio_data))
@@ -83,6 +97,33 @@ class SimpleEcho(WebSocket):
 		print(self.address, 'closed')
 		self.wavFileWriter.Close()
 
-server = SimpleWebSocketServer('', 9003, SimpleEcho)
-print ("Starting ws server at port 9003")
-server.serveforever()
+def main():
+	parser = OptionParser(
+			usage='usage: %prog [options] <map-file>',
+			description="This script print the dependencies of emv-modules to non-emv-modules",
+			prog=os.path.basename(__file__))
+	parser = OptionParser()
+	parser.add_option(	"-w", "--wav-writer",
+						dest="wav_writer",
+						action="store_true",
+						default=False,
+						help="Enable record pcm stream to wav file")
+	parser.add_option(	"-p", "--play",
+						dest="pcm_player",
+						action="store_true",
+						default=False,
+						help="Enable play pcm stream to audio out")
+	(options, args) = parser.parse_args()
+
+	if options.pcm_player:
+		globalConfig["PcmPlayer"] = True
+	if options.wav_writer:
+		globalConfig["WavFileWriter"] = True
+	print(globalConfig)
+
+	server = SimpleWebSocketServer('', 9003, SimpleEcho)
+	print ("Starting ws server at port 9003")
+	server.serveforever()
+
+if __name__ == "__main__":
+	main()
