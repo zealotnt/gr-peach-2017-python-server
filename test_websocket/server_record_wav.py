@@ -21,6 +21,17 @@ class Singleton(type):
 			cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
 		return cls._instances[cls]
 
+class PcmPlayer(object):
+	__metaclass__ = Singleton
+	sound_out = alsaaudio.PCM()  # open default sound output
+	sound_out.setchannels(2)  # use only one channel of audio (aka mono)
+	sound_out.setrate(44100)  # how many samples per second
+	sound_out.setformat(alsaaudio.PCM_FORMAT_S16_LE)  # sample format
+
+	def WriteAudio(self, data):
+		data = str(data)
+		self.sound_out.write(data)
+
 class WavFileWriter(object):
 	__metaclass__ = Singleton
 	fileCount = 0
@@ -54,7 +65,7 @@ class SimpleEcho(WebSocket):
 	def __init__(self, *args, **kwargs):
 		super(SimpleEcho, self).__init__( *args, **kwargs)
 		self.wavFileWriter = WavFileWriter()
-		print self.wavFileWriter
+		self.pcmPlayer = PcmPlayer()
 
 	def handleMessage(self):
 		# echo message back to client
@@ -62,6 +73,7 @@ class SimpleEcho(WebSocket):
 		sys.stdout.write('.')
 		sys.stdout.flush()
 		self.wavFileWriter.ExtendData(self.data)
+		self.pcmPlayer.WriteAudio(self.data)
 
 	def handleConnected(self):
 		print(self.address, 'connected')
