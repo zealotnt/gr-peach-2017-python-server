@@ -32,8 +32,9 @@ class PcmPlayer(object):
 	global globalConfig
 	sound_out = alsaaudio.PCM()  # open default sound output
 	sound_out.setchannels(2)  # use only one channel of audio (aka mono)
-	sound_out.setrate(44100)  # how many samples per second
+	sound_out.setrate(16000)  # how many samples per second
 	sound_out.setformat(alsaaudio.PCM_FORMAT_S16_LE)  # sample format
+	sound_out.setperiodsize(4)
 
 	def WriteAudio(self, data):
 		if not globalConfig['PcmPlayer']:
@@ -61,7 +62,7 @@ class WavFileWriter(object):
 		self.fileName = 'record%d.wav' % self.fileCount
 		print("Open file %s to write" % self.fileName)
 		self.record_output = wave.open(self.fileName, 'w')
-		self.record_output.setparams((2, 2, 44100, 0, 'NONE', 'not compressed'))
+		self.record_output.setparams((2, 2, 16000, 0, 'NONE', 'not compressed'))
 
 	def Close(self):
 		if not globalConfig['WavFileWriter']:
