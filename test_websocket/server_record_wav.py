@@ -13,6 +13,8 @@ from urllib2 import HTTPError, URLError
 import flask
 from flask import Flask, jsonify, make_response, request
 import threading
+import snowboydecoder
+import signal
 
 globalConfig = {
 	"PcmPlayer": False,
@@ -20,6 +22,21 @@ globalConfig = {
 }
 APP = Flask(__name__)
 LOG = APP.logger
+gCount = 0
+gDoneWw = False
+gRcvVoiceCmd = False
+gDoneStream = False
+
+interrupted = False
+def signal_handler(signal, frame):
+	global interrupted
+	interrupted = True
+
+def interrupt_callback():
+	global interrupted
+	return interrupted
+# capture SIGINT signal, e.g., Ctrl+C
+signal.signal(signal.SIGINT, signal_handler)
 
 def dump_hex(data, desc_str="", token=":", prefix="", preFormat=""):
 	to_write = desc_str + token.join(prefix+"{:02x}".format(ord(c)) for c in data) + "\r\n"
@@ -72,7 +89,8 @@ class AudioProducer(object):
 
 	def WakeWordCallBack(self):
 		# This callback will be called when snowboy detect the wakeword
-		print "WWCB"
+		global gDoneWw
+		gDoneWw = True
 		return
 
 class WavFileWriter(object):
@@ -108,9 +126,6 @@ class WavFileWriter(object):
 		self.record_output = None
 		self.audio_data = bytearray()
 		self.fileCount += 1
-gCount = 0
-gDoneWw = False
-gDoneStream = False
 
 class SimpleEcho(WebSocket):
 	def __init__(self, *args, **kwargs):
@@ -125,21 +140,21 @@ class SimpleEcho(WebSocket):
 		global gCount
 		global gDoneWw
 		global gDoneStream
-		gCount += 1
-		if gDoneWw == False:
-			if gCount > 5:
+		global gRcvVoiceCmd
+		if gDoneWw == True and gRcvVoiceCmd == False:
+			print("Close cause snowboy")
+			gRcvVoiceCmd = True
+			self.close()
+			return
+		if gDoneWw == True and gRcvVoiceCmd == True:
+			gCount += 1
+			if gCount > 20:
 				gCount = 0
-				print("Closing 1")
-				self.close(reason = "fuck you shit")
-				gDoneWw = True
-				return
-		if gDoneWw == True:
-			if gCount > 5:
-				gCount = 0
-				print("Closing 2")
+				print("Close cause end command")
 				gDoneWw = False
+				gRcvVoiceCmd = False
 				gDoneStream = True
-				self.close(reason = "fuck you shit")
+				self.close()
 				return
 
 		sys.stdout.write('.')
@@ -163,13 +178,17 @@ def webhook():
 	# action = req.get('result').get('action')
 	global gDoneWw
 	global gDoneStream
+	global gRcvVoiceCmd
 	ret = "idle"
 	if gDoneWw == True:
 		ret = 'done-wake-word'
+	if gDoneWw == False and gRcvVoiceCmd == True:
+		ret = 'stream-cmd'
 	if gDoneStream == True:
 		ret = 'play-audio'
 		gDoneStream = False
 		gDoneWw = False
+		gRcvVoiceCmd = False
 	res = {'action': ret}
 
 	return make_response(jsonify(res))
@@ -193,6 +212,19 @@ def RunWsServer():
 	server = SimpleWebSocketServer('', 9003, SimpleEcho)
 	print ("Starting ws server at port 9003")
 	server.serveforever()
+
+def RunSnowboy():
+	commObject = AudioProducer()
+	snowboydecoder.AddChainCallback(commObject.WakeWordCallBack)
+	detector = snowboydecoder.HotwordDetector(	"./snowboy.umdl",
+												sensitivity=1,
+												enableGrPeach=True,
+												audioCommObject=commObject)
+	print('Snowboy started')
+	detector.start( detected_callback=snowboydecoder.play_audio_file,
+					interrupt_check=interrupt_callback,
+					sleep_time=0.03)
+	detector.terminate()
 
 def main():
 	parser = OptionParser(
@@ -220,6 +252,8 @@ def main():
 
 	wsServer = threading.Thread(target=RunWsServer)
 	wsServer.start()
+	snowBoyRunner = threading.Thread(target=RunSnowboy)
+	snowBoyRunner.start()
 	RunFlaskServer()
 
 if __name__ == "__main__":

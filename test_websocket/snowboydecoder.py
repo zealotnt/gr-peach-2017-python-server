@@ -33,7 +33,7 @@ class RingBuffer(object):
 		return tmp
 
 chainCallBack = []
-def SetChainCallback(cb):
+def AddChainCallback(cb):
 	global chainCallBack
 	chainCallBack.append(cb)
 

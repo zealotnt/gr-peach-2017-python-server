@@ -31,7 +31,7 @@ def start_ws_server():
 thread = Thread(target = start_ws_server)
 thread.start()
 commObject = AudioProducer()
-snowboydecoder.SetChainCallback(commObject.WakeWordCallBack)
+snowboydecoder.AddChainCallback(commObject.WakeWordCallBack)
 
 detector = snowboydecoder.HotwordDetector(	model,
 											sensitivity=1,
