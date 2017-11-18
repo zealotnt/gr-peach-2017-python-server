@@ -52,6 +52,29 @@ class PcmPlayer(object):
 		data = str(data)
 		self.sound_out.write(data)
 
+class AudioProducer(object):
+	__metaclass__ = Singleton
+	callback = None
+	def SetData(self, data):
+		if self.callback != None:
+			self.callback(data, "", "", "")
+		pass
+
+	def SetCallback(self, cb):
+		self.callback = cb
+
+	def ConvertAudioDualToMono(self, in_data):
+		new_data = bytearray()
+		for idx, data in enumerate(in_data):
+			if idx % 2 == 1:
+				new_data.append(data)
+		return new_data
+
+	def WakeWordCallBack(self):
+		# This callback will be called when snowboy detect the wakeword
+		print "WWCB"
+		return
+
 class WavFileWriter(object):
 	__metaclass__ = Singleton
 	fileCount = 0
@@ -94,6 +117,7 @@ class SimpleEcho(WebSocket):
 		super(SimpleEcho, self).__init__( *args, **kwargs)
 		self.wavFileWriter = WavFileWriter()
 		self.pcmPlayer = PcmPlayer()
+		self.comm = AudioProducer()
 
 	def handleMessage(self):
 		# echo message back to client
@@ -122,6 +146,7 @@ class SimpleEcho(WebSocket):
 		sys.stdout.flush()
 		self.wavFileWriter.ExtendData(self.data)
 		self.pcmPlayer.WriteAudio(self.data)
+		self.comm.SetData(self.data)
 
 	def handleConnected(self):
 		print(self.address, 'connected')
