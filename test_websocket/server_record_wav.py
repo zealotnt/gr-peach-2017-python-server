@@ -6,10 +6,20 @@ import alsaaudio
 import wave
 from optparse import OptionParser, OptionGroup
 
+import json
+import random
+from httplib import HTTPException
+from urllib2 import HTTPError, URLError
+import flask
+from flask import Flask, jsonify, make_response, request
+import threading
+
 globalConfig = {
 	"PcmPlayer": False,
 	"WavFileWriter": False,
 }
+APP = Flask(__name__)
+LOG = APP.logger
 
 def dump_hex(data, desc_str="", token=":", prefix="", preFormat=""):
 	to_write = desc_str + token.join(prefix+"{:02x}".format(ord(c)) for c in data) + "\r\n"
@@ -75,6 +85,9 @@ class WavFileWriter(object):
 		self.record_output = None
 		self.audio_data = bytearray()
 		self.fileCount += 1
+gCount = 0
+gDoneWw = False
+gDoneStream = False
 
 class SimpleEcho(WebSocket):
 	def __init__(self, *args, **kwargs):
@@ -85,6 +98,26 @@ class SimpleEcho(WebSocket):
 	def handleMessage(self):
 		# echo message back to client
 		# self.sendMessage(self.data)
+		global gCount
+		global gDoneWw
+		global gDoneStream
+		gCount += 1
+		if gDoneWw == False:
+			if gCount > 5:
+				gCount = 0
+				print("Closing 1")
+				self.close(reason = "fuck you shit")
+				gDoneWw = True
+				return
+		if gDoneWw == True:
+			if gCount > 5:
+				gCount = 0
+				print("Closing 2")
+				gDoneWw = False
+				gDoneStream = True
+				self.close(reason = "fuck you shit")
+				return
+
 		sys.stdout.write('.')
 		sys.stdout.flush()
 		self.wavFileWriter.ExtendData(self.data)
@@ -97,6 +130,44 @@ class SimpleEcho(WebSocket):
 	def handleClose(self):
 		print(self.address, 'closed')
 		self.wavFileWriter.Close()
+
+@APP.route('/', methods=['GET'])
+def webhook():
+	# Get request parameters
+	# req = request.get_json(silent=True, force=True)
+	# action = req.get('result').get('action')
+	global gDoneWw
+	global gDoneStream
+	ret = "idle"
+	if gDoneWw == True:
+		ret = 'done-wake-word'
+	if gDoneStream == True:
+		ret = 'play-audio'
+		gDoneStream = False
+		gDoneWw = False
+	res = {'action': ret}
+
+	return make_response(jsonify(res))
+
+@APP.route('/audio')
+def file_downloads():
+	try:
+		return flask.send_file('/home/zealot/workspace_gr-peach/example-server-projects/tts-examples/good44100.mp3', attachment_filename='play.mp3')
+	except Exception as e:
+		return str(e)
+
+def RunFlaskServer():
+	global APP
+	APP.run(
+		# debug=True,
+		port=8080,
+		host='0.0.0.0'
+	)
+
+def RunWsServer():
+	server = SimpleWebSocketServer('', 9003, SimpleEcho)
+	print ("Starting ws server at port 9003")
+	server.serveforever()
 
 def main():
 	parser = OptionParser(
@@ -122,9 +193,9 @@ def main():
 		globalConfig["WavFileWriter"] = True
 	print(globalConfig)
 
-	server = SimpleWebSocketServer('', 9003, SimpleEcho)
-	print ("Starting ws server at port 9003")
-	server.serveforever()
+	wsServer = threading.Thread(target=RunWsServer)
+	wsServer.start()
+	RunFlaskServer()
 
 if __name__ == "__main__":
 	main()
