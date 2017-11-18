@@ -15,7 +15,10 @@ from flask import Flask, jsonify, make_response, request
 import threading
 import snowboydecoder
 import signal
+from dotenv import load_dotenv
 
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path, verbose=True)
 globalConfig = {
 	"PcmPlayer": False,
 	"WavFileWriter": False,
