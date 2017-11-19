@@ -64,7 +64,7 @@ def AudioDualToMono(in_data):
 			new_data.append(data)
 	return str(new_data)
 
-def transcribe_file(speech_file):
+def SpeechToText(speech_file):
     """Transcribe the given audio file."""
     from google.cloud import speech
     from google.cloud.speech import enums
@@ -89,8 +89,16 @@ def transcribe_file(speech_file):
     # Print the first alternative of all the consecutive results.
     for result in response.results:
         print('[Transcript] %s%s%s' % (bcolors.OKGREEN + bcolors.BOLD, result.alternatives[0].transcript, bcolors.ENDC))
+    return response.results[0].alternatives[0].transcript
     # [END migration_sync_response]
 # [END def_transcribe_file]
+
+def TextToSpeech(textIn):
+	from gtts import gTTS
+	print "[TextToSpeech] %s" % (textIn)
+	tts = gTTS(text=textIn, lang='en-us')
+	tts.save("file.mp3")
+	os.system("ffmpeg -y -i file.mp3 -ar 44100 -ac 2 file44100.mp3")
 
 class Singleton(type):
 	_instances = {}
@@ -106,6 +114,7 @@ class GrPeachStateMachine(object):
 	DoneStream = False
 	stateChangeMux = threading.Lock()
 	Count = 0
+	VoiceResp = ""
 
 	def HandleWakeWordCallback(self):
 		self.DoneWw = True
@@ -146,7 +155,7 @@ class GrPeachStateMachine(object):
 			self.RcvVoiceCmd = False
 			self.DoneStream = True
 			self.Count = 0
-			transcribe_file(wavFile)
+			self.VoiceResp = SpeechToText(wavFile)
 		self.stateChangeMux.release()
 
 	def HandleGetState(self):
@@ -161,6 +170,13 @@ class GrPeachStateMachine(object):
 			self.DoneStream = False
 			self.DoneWw = False
 			self.RcvVoiceCmd = False
+			TextToSpeech(self.VoiceResp)
+		self.stateChangeMux.release()
+		return ret
+
+	def GetVoiceResponse(self):
+		self.stateChangeMux.acquire()
+		ret = self.VoiceResp
 		self.stateChangeMux.release()
 		return ret
 
@@ -336,7 +352,7 @@ def webhook():
 @APP.route('/audio')
 def file_downloads():
 	try:
-		return flask.send_file('/home/zealot/workspace_gr-peach/example-server-projects/tts-examples/good44100.mp3', attachment_filename='play.mp3')
+		return flask.send_file('./file44100.mp3', attachment_filename='play.mp3')
 	except Exception as e:
 		return str(e)
 
