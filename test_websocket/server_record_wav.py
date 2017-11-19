@@ -20,6 +20,16 @@ from six.moves import queue
 import io
 import apiai
 import json
+import inspect
+import git
+def get_git_root():
+	CURRENT_DIR = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe()))) + os.sep
+	path = CURRENT_DIR
+	git_repo = git.Repo(path, search_parent_directories=True)
+	git_root = git_repo.git.rev_parse("--show-toplevel")
+	return git_root
+sys.path.insert(0, get_git_root() + '/test_bluefinserial/bluefinserial')
+from utils import *
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path, verbose=True)
@@ -74,6 +84,7 @@ def SpeechToText(speech_file):
     from google.cloud import speech
     from google.cloud.speech import enums
     from google.cloud.speech import types
+    print_noti("[SpeechToText] Entry")
     client = speech.SpeechClient()
 
     # [START migration_sync_request]
@@ -92,20 +103,26 @@ def SpeechToText(speech_file):
     response = client.recognize(config, audio)
     # [END migration_sync_request]
     # Print the first alternative of all the consecutive results.
-    for result in response.results:
-        print('[Transcript] %s%s%s' % (bcolors.OKGREEN + bcolors.BOLD, result.alternatives[0].transcript, bcolors.ENDC))
+    for idx, result in enumerate(response.results):
+        print('[Transcript] %d %s%s%s' % (idx, bcolors.OKGREEN + bcolors.BOLD, result.alternatives[0].transcript, bcolors.ENDC))
+    print_noti("[SpeechToText] End")
     if len(response.results) == 0:
+    	print_err("[SpeechToText] No speech result")
     	return ""
+    ret = response.results[0].alternatives[0].transcript
+    print('[Transcript] Result: %s%s%s' % (bcolors.OKGREEN + bcolors.BOLD, ret, bcolors.ENDC))
     return response.results[0].alternatives[0].transcript
     # [END migration_sync_response]
 # [END def_transcribe_file]
 
 def TextToSpeech(textIn):
 	from gtts import gTTS
+	print_noti("[TextToSpeech] Entry")
 	print "[TextToSpeech] %s" % (textIn)
 	tts = gTTS(text=textIn, lang='en-us')
 	tts.save("file.mp3")
-	os.system("ffmpeg -y -i file.mp3 -ar 44100 -ac 2 file44100.mp3")
+	os.system("ffmpeg -y -i file.mp3 -ar 44100 -ac 2 file44100.mp3 >/dev/null 2>&1")
+	print_noti("[TextToSpeech] End")
 
 def RequestDialogflow(speechIn):
 	request = dialogFlowAgent.text_request()
@@ -122,7 +139,7 @@ def DoAction(obj):
 	# intent = obj["body"]["result"]["metadata"]["intentName"]
 
 	response_text = obj["result"]["fulfillment"]["speech"]
-	print (response_text)
+	print ("[Response-Text]: %s%s%s" % (bcolors.OKGREEN + bcolors.BOLD, response_text, bcolors.ENDC))
 	return response_text
 
 class Singleton(type):
@@ -151,7 +168,7 @@ class GrPeachStateMachine(object):
 		"""
 		self.stateChangeMux.acquire()
 		if self.DoneWw == True and self.RcvVoiceCmd == False:
-			print("Close cause snowboy")
+			print_noti("Close cause snowboy")
 			self.Count = 0
 			self.RcvVoiceCmd = True
 			self.stateChangeMux.release()
@@ -175,7 +192,7 @@ class GrPeachStateMachine(object):
 	def HandleWsClosed(self, wavFile):
 		self.stateChangeMux.acquire()
 		if self.DoneWw == True and self.RcvVoiceCmd == True and self.Count != 0:
-			print("Close cause end command")
+			print_noti("Close cause end command")
 			self.DoneWw = False
 			self.RcvVoiceCmd = False
 			self.DoneStream = True
@@ -298,6 +315,8 @@ class WavFileWriter(object):
 	def ExtendData(self, data):
 		if not globalConfig['WavFileWriter']:
 			return
+		if self.record_output == None:
+			return
 		self.audio_data.extend(data)
 
 	def OpenToWrite(self):
@@ -306,7 +325,7 @@ class WavFileWriter(object):
 		if self.record_output != None:
 			self.Close()
 		self.fileName = 'record%d.wav' % self.fileCount
-		print("Open file %s to write" % self.fileName)
+		print_noti("[WavWriter] Open file %s to write" % self.fileName)
 		self.record_output = wave.open(self.fileName, 'w')
 		self.record_output.setparams((  1,						# nchannels
 										2,						# sampwidth
@@ -320,7 +339,7 @@ class WavFileWriter(object):
 			return
 		if self.record_output == None:
 			return
-		print("Record len: ", len(self.audio_data))
+		print_noti("[WavWriter] Record len: %d" % len(self.audio_data))
 		self.record_output.writeframes(self.audio_data)
 		self.record_output.close()
 		self.record_output = None
@@ -357,13 +376,17 @@ class SimpleEcho(WebSocket):
 		self.comm.SetData(self.data)
 
 	def handleConnected(self):
-		print(self.address, 'connected')
-		self.wavFileWriter.OpenToWrite()
+		# self.address
+		ret = self.grStateMachine.HandleGetState()
+		print_noti("[WsConn] new connection connected - %s" % ret)
+		if ret == "done-wake-word" or ret == "stream-cmd":
+			self.wavFileWriter.OpenToWrite()
 
 	def handleClose(self):
+		ret = self.grStateMachine.HandleGetState()
+		print_noti("[WsConn] connection closed - %s" % ret)
 		self.wavFileWriter.Close()
 		self.grStateMachine.HandleWsClosed(self.wavFileWriter.GetLastFile())
-		print(self.address, 'closed')
 
 @APP.route('/', methods=['GET'])
 def webhook():
