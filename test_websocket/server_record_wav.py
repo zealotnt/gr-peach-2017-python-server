@@ -18,6 +18,8 @@ import signal
 from dotenv import load_dotenv
 from six.moves import queue
 import io
+import apiai
+import json
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path, verbose=True)
@@ -28,6 +30,9 @@ globalConfig = {
 APP = Flask(__name__)
 LOG = APP.logger
 interrupted = False
+CLIENT_ACCESS_TOKEN = os.environ.get('CLIENT_ACCESS_TOKEN')
+dialogFlowAgent = apiai.ApiAI(CLIENT_ACCESS_TOKEN)
+
 def signal_handler(signal, frame):
 	global interrupted
 	interrupted = True
@@ -89,6 +94,8 @@ def SpeechToText(speech_file):
     # Print the first alternative of all the consecutive results.
     for result in response.results:
         print('[Transcript] %s%s%s' % (bcolors.OKGREEN + bcolors.BOLD, result.alternatives[0].transcript, bcolors.ENDC))
+    if len(response.results) == 0:
+    	return ""
     return response.results[0].alternatives[0].transcript
     # [END migration_sync_response]
 # [END def_transcribe_file]
@@ -99,6 +106,24 @@ def TextToSpeech(textIn):
 	tts = gTTS(text=textIn, lang='en-us')
 	tts.save("file.mp3")
 	os.system("ffmpeg -y -i file.mp3 -ar 44100 -ac 2 file44100.mp3")
+
+def RequestDialogflow(speechIn):
+	request = dialogFlowAgent.text_request()
+	request.lang = 'en'  # optional, default value equal 'en'
+	request.session_id = "some_unique_id"
+	request.query = speechIn
+	response = request.getresponse()
+	response_text = response.read()
+	obj = json.loads(response_text)
+	return obj
+
+def DoAction(obj):
+	device = ''
+	# intent = obj["body"]["result"]["metadata"]["intentName"]
+
+	response_text = obj["result"]["fulfillment"]["speech"]
+	print (response_text)
+	return response_text
 
 class Singleton(type):
 	_instances = {}
@@ -114,7 +139,7 @@ class GrPeachStateMachine(object):
 	DoneStream = False
 	stateChangeMux = threading.Lock()
 	Count = 0
-	VoiceResp = ""
+	SpeechRequest = ""
 
 	def HandleWakeWordCallback(self):
 		self.DoneWw = True
@@ -155,7 +180,7 @@ class GrPeachStateMachine(object):
 			self.RcvVoiceCmd = False
 			self.DoneStream = True
 			self.Count = 0
-			self.VoiceResp = SpeechToText(wavFile)
+			self.SpeechRequest = SpeechToText(wavFile)
 		self.stateChangeMux.release()
 
 	def HandleGetState(self):
@@ -170,13 +195,15 @@ class GrPeachStateMachine(object):
 			self.DoneStream = False
 			self.DoneWw = False
 			self.RcvVoiceCmd = False
+			req_obj = RequestDialogflow(self.SpeechRequest)
+			self.VoiceResp = DoAction(req_obj)
 			TextToSpeech(self.VoiceResp)
 		self.stateChangeMux.release()
 		return ret
 
 	def GetVoiceResponse(self):
 		self.stateChangeMux.acquire()
-		ret = self.VoiceResp
+		ret = self.SpeechRequest
 		self.stateChangeMux.release()
 		return ret
 
