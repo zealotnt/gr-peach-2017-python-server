@@ -114,7 +114,7 @@ def SpeechToText(speech_file):
 		return ""
 	ret = response.results[0].alternatives[0].transcript
 	print('[Transcript] Result: %s%s%s' % (bcolors.OKGREEN + bcolors.BOLD, ret, bcolors.ENDC))
-	return response.results[0].alternatives[0].transcript
+	return ret
 	# [END migration_sync_response]
 # [END def_transcribe_file]
 
@@ -141,12 +141,14 @@ def RequestDialogflow(speechIn):
 	response = request.getresponse()
 	response_text = response.read()
 	obj = json.loads(response_text)
+	print json.dumps(obj, indent=4, sort_keys=True)
 	return obj
 
 def DoAction(obj):
 	if globalConfig["TestV1"] == True:
 		return
 	if obj == None:
+		print_err("[DoAction] obj is None")
 		return "Sorry, I can't here it"
 
 	device = ''
@@ -166,8 +168,9 @@ class Singleton(type):
 STATE_IDLE=0
 STATE_WW_DONE=1
 STATE_RCV_CMD=2
-STATE_PLAYING=3
-STATE_PLAYDONE=4
+STATE_PREPARE_PLAYING=3
+STATE_PLAYING=4
+STATE_PLAYDONE=5
 
 class GrPeachStateMachine(object):
 	__metaclass__ = Singleton
@@ -180,7 +183,7 @@ class GrPeachStateMachine(object):
 	State = STATE_IDLE
 
 	def HandleWakeWordCallback(self):
-		self.State = STATE_WW_DONE
+		self.SetState(STATE_WW_DONE)
 
 	def HandleWsMessage(self):
 		"""
@@ -195,13 +198,13 @@ class GrPeachStateMachine(object):
 				if self.Count > 1:
 					self.Count = 0
 					print("Closing 1")
-					self.State = STATE_RCV_CMD
+					self.SetState(STATE_RCV_CMD)
 					self.stateChangeMux.release()
 					return True
 			elif self.State == STATE_WW_DONE or self.State == STATE_RCV_CMD:
 				if self.Count > 1:
 					self.Count = 0
-					self.State = STATE_PLAYING
+					self.SetState(STATE_PREPARE_PLAYING)
 					print("Closing 2")
 					self.stateChangeMux.release()
 					return True
@@ -209,7 +212,7 @@ class GrPeachStateMachine(object):
 			if self.State == STATE_WW_DONE:
 				print_noti("Close cause snowboy")
 				self.Count = 0
-				self.State = STATE_RCV_CMD
+				self.SetState(STATE_RCV_CMD)
 				self.stateChangeMux.release()
 				return True
 			elif self.State == STATE_RCV_CMD:
@@ -219,17 +222,13 @@ class GrPeachStateMachine(object):
 		return False
 
 
-	def HandleWsClosed(self, wavFile):
+	def HandleWsClosed(self):
 		self.stateChangeMux.acquire()
 		if self.State == STATE_RCV_CMD and self.Count > 0:
 			print_noti("Close cause end command")
 			self.Count = 0
-			self.SpeechRequest = SpeechToText(wavFile)
-			self.State = STATE_PLAYING
+			self.SetState(STATE_PREPARE_PLAYING)
 		self.stateChangeMux.release()
-
-	def GetSpeech(self):
-		return self.SpeechRequest
 
 	def HandleGetState(self):
 		self.stateChangeMux.acquire()
@@ -238,13 +237,18 @@ class GrPeachStateMachine(object):
 			ret = 'done-wake-word'
 		elif self.State == STATE_RCV_CMD:
 			ret = 'stream-cmd'
+		elif self.State == STATE_PREPARE_PLAYING:
+			ret = 'prepare-playing'
 		elif self.State == STATE_PLAYING:
 			ret = 'play-audio'
 		self.stateChangeMux.release()
 		return ret
 
 	def HandleDownload(self):
-		self.State = STATE_IDLE
+		self.SetState(STATE_IDLE)
+
+	def SetState(self, state):
+		self.State = state
 
 class PcmPlayer(object):
 	__metaclass__ = Singleton
@@ -409,10 +413,10 @@ class SimpleEcho(WebSocket):
 			self.wavFileWriter.OpenToWrite()
 
 	def handleClose(self):
+		self.wavFileWriter.Close()
+		self.grStateMachine.HandleWsClosed()
 		ret = self.grStateMachine.HandleGetState()
 		print_noti("[WsConn] connection closed - %s" % ret)
-		self.wavFileWriter.Close()
-		self.grStateMachine.HandleWsClosed(self.wavFileWriter.GetLastFile())
 
 @APP.route('/', methods=['GET'])
 def webhook():
@@ -421,10 +425,14 @@ def webhook():
 	# action = req.get('result').get('action')
 	grStateMachine = GrPeachStateMachine()
 	ret = grStateMachine.HandleGetState()
+	wavFileWriter = WavFileWriter()
 	if ret == "play-audio":
-		req_obj = RequestDialogflow(grStateMachine.GetSpeech())
+		SpeechRequest = SpeechToText(wavFileWriter.GetLastFile())
+		req_obj = RequestDialogflow(SpeechRequest)
 		VoiceResp = DoAction(req_obj)
 		TextToSpeech(VoiceResp)
+	elif ret == "prepare-playing":
+		grStateMachine.SetState(STATE_PLAYING)
 
 	res = {'action': ret}
 
