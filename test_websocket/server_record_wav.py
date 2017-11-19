@@ -17,6 +17,7 @@ import snowboydecoder
 import signal
 from dotenv import load_dotenv
 from six.moves import queue
+import io
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path, verbose=True)
@@ -26,11 +27,6 @@ globalConfig = {
 }
 APP = Flask(__name__)
 LOG = APP.logger
-gCount = 0
-gDoneWw = False
-gRcvVoiceCmd = False
-gDoneStream = False
-
 interrupted = False
 def signal_handler(signal, frame):
 	global interrupted
@@ -41,6 +37,16 @@ def interrupt_callback():
 	return interrupted
 # capture SIGINT signal, e.g., Ctrl+C
 signal.signal(signal.SIGINT, signal_handler)
+
+class bcolors:
+	HEADER = '\033[95m'
+	OKBLUE = '\033[94m'
+	OKGREEN = '\033[92m'
+	WARNING = '\033[93m'
+	FAIL = '\033[91m'
+	ENDC = '\033[0m'
+	BOLD = '\033[1m'
+	UNDERLINE = '\033[4m'
 
 def dump_hex(data, desc_str="", token=":", prefix="", preFormat=""):
 	to_write = desc_str + token.join(prefix+"{:02x}".format(ord(c)) for c in data) + "\r\n"
@@ -56,7 +62,35 @@ def AudioDualToMono(in_data):
 	for idx, data in enumerate(in_data):
 		if idx % 2 == 1:
 			new_data.append(data)
-	return new_data
+	return str(new_data)
+
+def transcribe_file(speech_file):
+    """Transcribe the given audio file."""
+    from google.cloud import speech
+    from google.cloud.speech import enums
+    from google.cloud.speech import types
+    client = speech.SpeechClient()
+
+    # [START migration_sync_request]
+    # [START migration_audio_config_file]
+    with io.open(speech_file, 'rb') as audio_file:
+        content = audio_file.read()
+
+    audio = types.RecognitionAudio(content=content)
+    config = types.RecognitionConfig(
+        encoding=enums.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=16000,
+        language_code='en-US')
+    # [END migration_audio_config_file]
+
+    # [START migration_sync_response]
+    response = client.recognize(config, audio)
+    # [END migration_sync_request]
+    # Print the first alternative of all the consecutive results.
+    for result in response.results:
+        print('[Transcript] %s%s%s' % (bcolors.OKGREEN + bcolors.BOLD, result.alternatives[0].transcript, bcolors.ENDC))
+    # [END migration_sync_response]
+# [END def_transcribe_file]
 
 class Singleton(type):
 	_instances = {}
@@ -65,11 +99,76 @@ class Singleton(type):
 			cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
 		return cls._instances[cls]
 
+class GrPeachStateMachine(object):
+	__metaclass__ = Singleton
+	DoneWw = False
+	RcvVoiceCmd = False
+	DoneStream = False
+	stateChangeMux = threading.Lock()
+	Count = 0
+
+	def HandleWakeWordCallback(self):
+		self.DoneWw = True
+
+	def HandleWsMessage(self):
+		"""
+		if return True
+		the ws-msg-handler should close the socket
+		"""
+		self.stateChangeMux.acquire()
+		if self.DoneWw == True and self.RcvVoiceCmd == False:
+			print("Close cause snowboy")
+			self.Count = 0
+			self.RcvVoiceCmd = True
+			self.stateChangeMux.release()
+			return True
+		if self.DoneWw == True and self.RcvVoiceCmd == True:
+			self.Count += 1
+		# if DoneWw == True and RcvVoiceCmd == True:
+		# 	Count += 1
+		# 	if Count > 20:
+		# 		Count = 0
+		# 		print("Close cause end command")
+		# 		DoneWw = False
+		# 		RcvVoiceCmd = False
+		# 		DoneStream = True
+		# 		self.close()
+		# 		return
+		self.stateChangeMux.release()
+		return False
+
+
+	def HandleWsClosed(self, wavFile):
+		self.stateChangeMux.acquire()
+		if self.DoneWw == True and self.RcvVoiceCmd == True and self.Count != 0:
+			print("Close cause end command")
+			self.DoneWw = False
+			self.RcvVoiceCmd = False
+			self.DoneStream = True
+			self.Count = 0
+			transcribe_file(wavFile)
+		self.stateChangeMux.release()
+
+	def HandleGetState(self):
+		self.stateChangeMux.acquire()
+		ret = "idle"
+		if self.DoneWw == True:
+			ret = 'done-wake-word'
+		if self.DoneWw == True and self.RcvVoiceCmd == True:
+			ret = 'stream-cmd'
+		if self.DoneStream == True:
+			ret = 'play-audio'
+			self.DoneStream = False
+			self.DoneWw = False
+			self.RcvVoiceCmd = False
+		self.stateChangeMux.release()
+		return ret
+
 class PcmPlayer(object):
 	__metaclass__ = Singleton
 	global globalConfig
 	sound_out = alsaaudio.PCM()  # open default sound output
-	sound_out.setchannels(2)  # use only one channel of audio (aka mono)
+	sound_out.setchannels(1)  # use only one channel of audio (aka mono)
 	sound_out.setrate(16000)  # how many samples per second
 	sound_out.setformat(alsaaudio.PCM_FORMAT_S16_LE)  # sample format
 	sound_out.setperiodsize(4)
@@ -99,7 +198,7 @@ class SpeechToTextProducer(object):
 
 	def Fill_buffer(self, in_data):
 		"""Continuously collect data from the audio stream, into the buffer."""
-		in_data = AudioDualToMono(in_data)
+		# in_data = AudioDualToMono(in_data)
 		in_data = str(in_data)
 		self._buff.put(in_data)
 
@@ -137,12 +236,13 @@ class AudioProducer(object):
 		self.callback = cb
 
 	def ConvertAudioDualToMono(self, in_data):
-		return AudioDualToMono(in_data)
+		# return AudioDualToMono(in_data)
+		return in_data
 
-	def WakeWordCallBack(self):
+	def WakeWordCallBack(self, *arg):
 		# This callback will be called when snowboy detect the wakeword
-		global gDoneWw
-		gDoneWw = True
+		grStateMachine = GrPeachStateMachine()
+		grStateMachine.HandleWakeWordCallback()
 		return
 
 class WavFileWriter(object):
@@ -165,7 +265,12 @@ class WavFileWriter(object):
 		self.fileName = 'record%d.wav' % self.fileCount
 		print("Open file %s to write" % self.fileName)
 		self.record_output = wave.open(self.fileName, 'w')
-		self.record_output.setparams((2, 2, 16000, 0, 'NONE', 'not compressed'))
+		self.record_output.setparams((  1,						# nchannels
+										2,						# sampwidth
+										16000,					# framerate
+										0,						# nframes
+										'NONE',					# comptype
+										'not compressed'))		# compname
 
 	def Close(self):
 		if not globalConfig['WavFileWriter']:
@@ -179,6 +284,11 @@ class WavFileWriter(object):
 		self.audio_data = bytearray()
 		self.fileCount += 1
 
+	def GetLastFile(self):
+		if self.fileCount == 0:
+			return ""
+		return 'record%d.wav' % (self.fileCount - 1)
+
 class SimpleEcho(WebSocket):
 	def __init__(self, *args, **kwargs):
 		super(SimpleEcho, self).__init__( *args, **kwargs)
@@ -186,29 +296,15 @@ class SimpleEcho(WebSocket):
 		self.pcmPlayer = PcmPlayer()
 		self.comm = AudioProducer()
 		self.sttStreamer = SpeechToTextProducer()
+		self.grStateMachine = GrPeachStateMachine()
 
 	def handleMessage(self):
 		# echo message back to client
 		# self.sendMessage(self.data)
-		global gCount
-		global gDoneWw
-		global gDoneStream
-		global gRcvVoiceCmd
-		if gDoneWw == True and gRcvVoiceCmd == False:
-			print("Close cause snowboy")
-			gRcvVoiceCmd = True
+		self.data = AudioDualToMono(self.data)
+		if self.grStateMachine.HandleWsMessage() == True:
 			self.close()
 			return
-		if gDoneWw == True and gRcvVoiceCmd == True:
-			gCount += 1
-			if gCount > 20:
-				gCount = 0
-				print("Close cause end command")
-				gDoneWw = False
-				gRcvVoiceCmd = False
-				gDoneStream = True
-				self.close()
-				return
 
 		sys.stdout.write('.')
 		sys.stdout.flush()
@@ -222,27 +318,17 @@ class SimpleEcho(WebSocket):
 		self.wavFileWriter.OpenToWrite()
 
 	def handleClose(self):
-		print(self.address, 'closed')
 		self.wavFileWriter.Close()
+		self.grStateMachine.HandleWsClosed(self.wavFileWriter.GetLastFile())
+		print(self.address, 'closed')
 
 @APP.route('/', methods=['GET'])
 def webhook():
 	# Get request parameters
 	# req = request.get_json(silent=True, force=True)
 	# action = req.get('result').get('action')
-	global gDoneWw
-	global gDoneStream
-	global gRcvVoiceCmd
-	ret = "idle"
-	if gDoneWw == True:
-		ret = 'done-wake-word'
-	if gDoneWw == False and gRcvVoiceCmd == True:
-		ret = 'stream-cmd'
-	if gDoneStream == True:
-		ret = 'play-audio'
-		gDoneStream = False
-		gDoneWw = False
-		gRcvVoiceCmd = False
+	grStateMachine = GrPeachStateMachine()
+	ret = grStateMachine.HandleGetState()
 	res = {'action': ret}
 
 	return make_response(jsonify(res))
@@ -270,12 +356,13 @@ def RunWsServer():
 def RunSnowboy():
 	commObject = AudioProducer()
 	snowboydecoder.AddChainCallback(commObject.WakeWordCallBack)
+	snowboydecoder.AddChainCallback(snowboydecoder.play_audio_file)
 	detector = snowboydecoder.HotwordDetector(	"./snowboy.umdl",
 												sensitivity=1,
 												enableGrPeach=True,
 												audioCommObject=commObject)
 	print('Snowboy started')
-	detector.start( detected_callback=snowboydecoder.play_audio_file,
+	detector.start( detected_callback=snowboydecoder.CallbackChains,
 					interrupt_check=interrupt_callback,
 					sleep_time=0.03)
 	detector.terminate()

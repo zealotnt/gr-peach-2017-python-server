@@ -37,6 +37,11 @@ def AddChainCallback(cb):
 	global chainCallBack
 	chainCallBack.append(cb)
 
+def CallbackChains(arg=DETECT_DING):
+	global chainCallBack
+	for cb in chainCallBack:
+		cb(arg)
+
 def play_audio_file(fname=DETECT_DING):
 	"""Simple callback function to play a wave file. By default it plays
 	a Ding sound.
@@ -44,9 +49,6 @@ def play_audio_file(fname=DETECT_DING):
 	:param str fname: wave file name
 	:return: None
 	"""
-	global chainCallBack
-	for cb in chainCallBack:
-		cb()
 	ding_wav = wave.open(fname, 'rb')
 	ding_data = ding_wav.readframes(ding_wav.getnframes())
 	audio = pyaudio.PyAudio()
