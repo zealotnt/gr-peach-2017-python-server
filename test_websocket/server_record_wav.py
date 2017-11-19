@@ -36,6 +36,7 @@ load_dotenv(dotenv_path, verbose=True)
 globalConfig = {
 	"PcmPlayer": False,
 	"WavFileWriter": False,
+	"TestV1": False,
 }
 APP = Flask(__name__)
 LOG = APP.logger
@@ -80,42 +81,46 @@ def AudioDualToMono(in_data):
 	return str(new_data)
 
 def SpeechToText(speech_file):
-    """Transcribe the given audio file."""
-    from google.cloud import speech
-    from google.cloud.speech import enums
-    from google.cloud.speech import types
-    print_noti("[SpeechToText] Entry")
-    client = speech.SpeechClient()
+	"""Transcribe the given audio file."""
+	if globalConfig["TestV1"] == True:
+		return
+	from google.cloud import speech
+	from google.cloud.speech import enums
+	from google.cloud.speech import types
+	print_noti("[SpeechToText] Entry")
+	client = speech.SpeechClient()
 
-    # [START migration_sync_request]
-    # [START migration_audio_config_file]
-    with io.open(speech_file, 'rb') as audio_file:
-        content = audio_file.read()
+	# [START migration_sync_request]
+	# [START migration_audio_config_file]
+	with io.open(speech_file, 'rb') as audio_file:
+		content = audio_file.read()
 
-    audio = types.RecognitionAudio(content=content)
-    config = types.RecognitionConfig(
-        encoding=enums.RecognitionConfig.AudioEncoding.LINEAR16,
-        sample_rate_hertz=16000,
-        language_code='en-US')
-    # [END migration_audio_config_file]
+	audio = types.RecognitionAudio(content=content)
+	config = types.RecognitionConfig(
+		encoding=enums.RecognitionConfig.AudioEncoding.LINEAR16,
+		sample_rate_hertz=16000,
+		language_code='en-US')
+	# [END migration_audio_config_file]
 
-    # [START migration_sync_response]
-    response = client.recognize(config, audio)
-    # [END migration_sync_request]
-    # Print the first alternative of all the consecutive results.
-    for idx, result in enumerate(response.results):
-        print('[Transcript] %d %s%s%s' % (idx, bcolors.OKGREEN + bcolors.BOLD, result.alternatives[0].transcript, bcolors.ENDC))
-    print_noti("[SpeechToText] End")
-    if len(response.results) == 0:
-    	print_err("[SpeechToText] No speech result")
-    	return ""
-    ret = response.results[0].alternatives[0].transcript
-    print('[Transcript] Result: %s%s%s' % (bcolors.OKGREEN + bcolors.BOLD, ret, bcolors.ENDC))
-    return response.results[0].alternatives[0].transcript
-    # [END migration_sync_response]
+	# [START migration_sync_response]
+	response = client.recognize(config, audio)
+	# [END migration_sync_request]
+	# Print the first alternative of all the consecutive results.
+	for idx, result in enumerate(response.results):
+		print('[Transcript] %d %s%s%s' % (idx, bcolors.OKGREEN + bcolors.BOLD, result.alternatives[0].transcript, bcolors.ENDC))
+	print_noti("[SpeechToText] End")
+	if len(response.results) == 0:
+		print_err("[SpeechToText] No speech result")
+		return ""
+	ret = response.results[0].alternatives[0].transcript
+	print('[Transcript] Result: %s%s%s' % (bcolors.OKGREEN + bcolors.BOLD, ret, bcolors.ENDC))
+	return response.results[0].alternatives[0].transcript
+	# [END migration_sync_response]
 # [END def_transcribe_file]
 
 def TextToSpeech(textIn):
+	if globalConfig["TestV1"] == True:
+		return
 	from gtts import gTTS
 	print_noti("[TextToSpeech] Entry")
 	print "[TextToSpeech] %s" % (textIn)
@@ -125,6 +130,8 @@ def TextToSpeech(textIn):
 	print_noti("[TextToSpeech] End")
 
 def RequestDialogflow(speechIn):
+	if globalConfig["TestV1"] == True:
+		return
 	request = dialogFlowAgent.text_request()
 	request.lang = 'en'  # optional, default value equal 'en'
 	request.session_id = "some_unique_id"
@@ -135,6 +142,8 @@ def RequestDialogflow(speechIn):
 	return obj
 
 def DoAction(obj):
+	if globalConfig["TestV1"] == True:
+		return
 	device = ''
 	# intent = obj["body"]["result"]["metadata"]["intentName"]
 
@@ -167,6 +176,7 @@ class GrPeachStateMachine(object):
 		the ws-msg-handler should close the socket
 		"""
 		self.stateChangeMux.acquire()
+
 		if self.DoneWw == True and self.RcvVoiceCmd == False:
 			print_noti("Close cause snowboy")
 			self.Count = 0
@@ -175,16 +185,27 @@ class GrPeachStateMachine(object):
 			return True
 		if self.DoneWw == True and self.RcvVoiceCmd == True:
 			self.Count += 1
-		# if DoneWw == True and RcvVoiceCmd == True:
-		# 	Count += 1
-		# 	if Count > 20:
-		# 		Count = 0
-		# 		print("Close cause end command")
-		# 		DoneWw = False
-		# 		RcvVoiceCmd = False
-		# 		DoneStream = True
-		# 		self.close()
-		# 		return
+
+		# self.Count += 1
+		# if self.DoneWw == False:
+		# 	if self.Count > 5:
+		# 		self.Count = 0
+		# 		print("Closing 1")
+		# 		self.DoneWw = True
+		# 		self.RcvVoiceCmd = True
+		# 		self.stateChangeMux.release()
+		# 		return True
+		# if self.DoneWw == True and self.RcvVoiceCmd == True:
+		# 	self.Count += 1
+		# 	if self.Count > 5:
+		# 		self.Count = 0
+		# 		print("Closing 2")
+		# 		self.DoneWw = False
+		# 		self.RcvVoiceCmd = False
+		# 		self.DoneStream = True
+		# 		self.stateChangeMux.release()
+		# 		return True
+
 		self.stateChangeMux.release()
 		return False
 
@@ -359,6 +380,7 @@ class SimpleEcho(WebSocket):
 		self.comm = AudioProducer()
 		self.sttStreamer = SpeechToTextProducer()
 		self.grStateMachine = GrPeachStateMachine()
+		self.count = 0
 
 	def handleMessage(self):
 		# echo message back to client
@@ -368,8 +390,11 @@ class SimpleEcho(WebSocket):
 			self.close()
 			return
 
-		sys.stdout.write('.')
-		sys.stdout.flush()
+		self.count += 1
+		if self.count > 5:
+			sys.stdout.write('.')
+			sys.stdout.flush()
+			self.count = 0
 		self.wavFileWriter.ExtendData(self.data)
 		self.pcmPlayer.WriteAudio(self.data)
 		# self.sttStreamer.Fill_buffer(self.data)
