@@ -132,6 +132,8 @@ def TextToSpeech(textIn):
 def RequestDialogflow(speechIn):
 	if globalConfig["TestV1"] == True:
 		return
+	if speechIn == "":
+		return None
 	request = dialogFlowAgent.text_request()
 	request.lang = 'en'  # optional, default value equal 'en'
 	request.session_id = "some_unique_id"
@@ -144,6 +146,9 @@ def RequestDialogflow(speechIn):
 def DoAction(obj):
 	if globalConfig["TestV1"] == True:
 		return
+	if obj == None:
+		return "Sorry, I can't here it"
+
 	device = ''
 	# intent = obj["body"]["result"]["metadata"]["intentName"]
 
@@ -158,6 +163,12 @@ class Singleton(type):
 			cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
 		return cls._instances[cls]
 
+STATE_IDLE=0
+STATE_WW_DONE=1
+STATE_RCV_CMD=2
+STATE_PLAYING=3
+STATE_PLAYDONE=4
+
 class GrPeachStateMachine(object):
 	__metaclass__ = Singleton
 	DoneWw = False
@@ -166,9 +177,10 @@ class GrPeachStateMachine(object):
 	stateChangeMux = threading.Lock()
 	Count = 0
 	SpeechRequest = ""
+	State = STATE_IDLE
 
 	def HandleWakeWordCallback(self):
-		self.DoneWw = True
+		self.State = STATE_WW_DONE
 
 	def HandleWsMessage(self):
 		"""
@@ -177,34 +189,31 @@ class GrPeachStateMachine(object):
 		"""
 		self.stateChangeMux.acquire()
 
-		if self.DoneWw == True and self.RcvVoiceCmd == False:
-			print_noti("Close cause snowboy")
-			self.Count = 0
-			self.RcvVoiceCmd = True
-			self.stateChangeMux.release()
-			return True
-		if self.DoneWw == True and self.RcvVoiceCmd == True:
+		if globalConfig["TestV1"] == True:
 			self.Count += 1
-
-		# self.Count += 1
-		# if self.DoneWw == False:
-		# 	if self.Count > 5:
-		# 		self.Count = 0
-		# 		print("Closing 1")
-		# 		self.DoneWw = True
-		# 		self.RcvVoiceCmd = True
-		# 		self.stateChangeMux.release()
-		# 		return True
-		# if self.DoneWw == True and self.RcvVoiceCmd == True:
-		# 	self.Count += 1
-		# 	if self.Count > 5:
-		# 		self.Count = 0
-		# 		print("Closing 2")
-		# 		self.DoneWw = False
-		# 		self.RcvVoiceCmd = False
-		# 		self.DoneStream = True
-		# 		self.stateChangeMux.release()
-		# 		return True
+			if self.State == STATE_IDLE:
+				if self.Count > 1:
+					self.Count = 0
+					print("Closing 1")
+					self.State = STATE_RCV_CMD
+					self.stateChangeMux.release()
+					return True
+			elif self.State == STATE_WW_DONE or self.State == STATE_RCV_CMD:
+				if self.Count > 1:
+					self.Count = 0
+					self.State = STATE_PLAYING
+					print("Closing 2")
+					self.stateChangeMux.release()
+					return True
+		else:
+			if self.State == STATE_WW_DONE:
+				print_noti("Close cause snowboy")
+				self.Count = 0
+				self.State = STATE_RCV_CMD
+				self.stateChangeMux.release()
+				return True
+			elif self.State == STATE_RCV_CMD:
+				self.Count += 1
 
 		self.stateChangeMux.release()
 		return False
@@ -212,38 +221,30 @@ class GrPeachStateMachine(object):
 
 	def HandleWsClosed(self, wavFile):
 		self.stateChangeMux.acquire()
-		if self.DoneWw == True and self.RcvVoiceCmd == True and self.Count != 0:
+		if self.State == STATE_RCV_CMD and self.Count > 0:
 			print_noti("Close cause end command")
-			self.DoneWw = False
-			self.RcvVoiceCmd = False
-			self.DoneStream = True
 			self.Count = 0
 			self.SpeechRequest = SpeechToText(wavFile)
+			self.State = STATE_PLAYING
 		self.stateChangeMux.release()
+
+	def GetSpeech(self):
+		return self.SpeechRequest
 
 	def HandleGetState(self):
 		self.stateChangeMux.acquire()
 		ret = "idle"
-		if self.DoneWw == True:
+		if self.State == STATE_WW_DONE:
 			ret = 'done-wake-word'
-		if self.DoneWw == True and self.RcvVoiceCmd == True:
+		elif self.State == STATE_RCV_CMD:
 			ret = 'stream-cmd'
-		if self.DoneStream == True:
+		elif self.State == STATE_PLAYING:
 			ret = 'play-audio'
-			self.DoneStream = False
-			self.DoneWw = False
-			self.RcvVoiceCmd = False
-			req_obj = RequestDialogflow(self.SpeechRequest)
-			self.VoiceResp = DoAction(req_obj)
-			TextToSpeech(self.VoiceResp)
 		self.stateChangeMux.release()
 		return ret
 
-	def GetVoiceResponse(self):
-		self.stateChangeMux.acquire()
-		ret = self.SpeechRequest
-		self.stateChangeMux.release()
-		return ret
+	def HandleDownload(self):
+		self.State = STATE_IDLE
 
 class PcmPlayer(object):
 	__metaclass__ = Singleton
@@ -420,6 +421,11 @@ def webhook():
 	# action = req.get('result').get('action')
 	grStateMachine = GrPeachStateMachine()
 	ret = grStateMachine.HandleGetState()
+	if ret == "play-audio":
+		req_obj = RequestDialogflow(grStateMachine.GetSpeech())
+		VoiceResp = DoAction(req_obj)
+		TextToSpeech(VoiceResp)
+
 	res = {'action': ret}
 
 	return make_response(jsonify(res))
@@ -427,6 +433,8 @@ def webhook():
 @APP.route('/audio')
 def file_downloads():
 	try:
+		grStateMachine = GrPeachStateMachine()
+		grStateMachine.HandleDownload()
 		return flask.send_file('./file44100.mp3', attachment_filename='play.mp3')
 	except Exception as e:
 		return str(e)
