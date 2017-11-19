@@ -16,6 +16,7 @@ import threading
 import snowboydecoder
 import signal
 from dotenv import load_dotenv
+from six.moves import queue
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path, verbose=True)
@@ -50,6 +51,13 @@ def DoHash(binary_data):
 	hashEngine.update(binary_data)
 	return hashEngine.finalize()
 
+def AudioDualToMono(in_data):
+	new_data = bytearray()
+	for idx, data in enumerate(in_data):
+		if idx % 2 == 1:
+			new_data.append(data)
+	return new_data
+
 class Singleton(type):
 	_instances = {}
 	def __call__(cls, *args, **kwargs):
@@ -72,6 +80,51 @@ class PcmPlayer(object):
 		data = str(data)
 		self.sound_out.write(data)
 
+class SpeechToTextProducer(object):
+	"""Opens a recording stream as a generator yielding the audio chunks."""
+	# Please make sure the audio format is
+	# + 16000 KHz
+	# + feed 1600 sample <=> 3200bytes <=> 100ms at a time (chunk)
+	# + only 1 channel (need to be trimmed down)
+	# + Create a thread-safe buffer of audio data
+	__metaclass__ = Singleton
+	_buff = queue.Queue()
+	closed = False
+
+	def StopStreaming(self):
+		self.closed = True
+		# Signal the generator to terminate so that the client's
+		# streaming_recognize method will not block the process termination.
+		self._buff.put(None)
+
+	def Fill_buffer(self, in_data):
+		"""Continuously collect data from the audio stream, into the buffer."""
+		in_data = AudioDualToMono(in_data)
+		in_data = str(in_data)
+		self._buff.put(in_data)
+
+	def generator(self):
+		while not self.closed:
+			# Use a blocking get() to ensure there's at least one chunk of
+			# data, and stop iteration if the chunk is None, indicating the
+			# end of the audio stream.
+			chunk = self._buff.get()
+			if chunk is None:
+				return
+			data = [chunk]
+
+			# Now consume whatever other data's still buffered.
+			while True:
+				try:
+					chunk = self._buff.get(block=False)
+					if chunk is None:
+						return
+					data.append(chunk)
+				except queue.Empty:
+					break
+			yield b''.join(data)
+# [END stream-code]
+
 class AudioProducer(object):
 	__metaclass__ = Singleton
 	callback = None
@@ -84,11 +137,7 @@ class AudioProducer(object):
 		self.callback = cb
 
 	def ConvertAudioDualToMono(self, in_data):
-		new_data = bytearray()
-		for idx, data in enumerate(in_data):
-			if idx % 2 == 1:
-				new_data.append(data)
-		return new_data
+		return AudioDualToMono(in_data)
 
 	def WakeWordCallBack(self):
 		# This callback will be called when snowboy detect the wakeword
@@ -136,6 +185,7 @@ class SimpleEcho(WebSocket):
 		self.wavFileWriter = WavFileWriter()
 		self.pcmPlayer = PcmPlayer()
 		self.comm = AudioProducer()
+		self.sttStreamer = SpeechToTextProducer()
 
 	def handleMessage(self):
 		# echo message back to client
@@ -164,6 +214,7 @@ class SimpleEcho(WebSocket):
 		sys.stdout.flush()
 		self.wavFileWriter.ExtendData(self.data)
 		self.pcmPlayer.WriteAudio(self.data)
+		# self.sttStreamer.Fill_buffer(self.data)
 		self.comm.SetData(self.data)
 
 	def handleConnected(self):
