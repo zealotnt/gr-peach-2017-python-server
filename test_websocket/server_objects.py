@@ -1,8 +1,6 @@
 import sys, os
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.backends import default_backend
-import alsaaudio
+# import alsaaudio
 import wave
 from optparse import OptionParser, OptionGroup
 
@@ -42,20 +40,20 @@ class Singleton(type):
 			cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
 		return cls._instances[cls]
 
-class PcmPlayer(object):
-	__metaclass__ = Singleton
-	global globalConfig
-	sound_out = alsaaudio.PCM()  # open default sound output
-	sound_out.setchannels(1)  # use only one channel of audio (aka mono)
-	sound_out.setrate(16000)  # how many samples per second
-	sound_out.setformat(alsaaudio.PCM_FORMAT_S16_LE)  # sample format
-	sound_out.setperiodsize(4)
+# class PcmPlayer(object):
+# 	__metaclass__ = Singleton
+# 	global globalConfig
+# 	sound_out = alsaaudio.PCM()  # open default sound output
+# 	sound_out.setchannels(1)  # use only one channel of audio (aka mono)
+# 	sound_out.setrate(16000)  # how many samples per second
+# 	sound_out.setformat(alsaaudio.PCM_FORMAT_S16_LE)  # sample format
+# 	sound_out.setperiodsize(4)
 
-	def WriteAudio(self, data):
-		if not globalConfig['PcmPlayer']:
-			return
-		data = str(data)
-		self.sound_out.write(data)
+# 	def WriteAudio(self, data):
+# 		if not globalConfig['PcmPlayer']:
+# 			return
+# 		data = str(data)
+# 		self.sound_out.write(data)
 
 class SpeechToTextProducer(object):
 	"""Opens a recording stream as a generator yielding the audio chunks."""

@@ -2,3 +2,6 @@ SimpleWebSocketServer/*
 *.wav
 .env
 *.mp3
+_snowboydetect.so
+resources
+snowboydetect.py

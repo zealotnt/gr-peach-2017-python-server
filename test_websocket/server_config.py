@@ -1,8 +1,5 @@
 import sys, os
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.backends import default_backend
-import alsaaudio
 import wave
 from optparse import OptionParser, OptionGroup
 
@@ -38,6 +35,7 @@ globalConfig = {
 	"TestV1": False,			# WW 5 ws-stream, CMD 5 ws-stream, play-audio
 	"ByPassSTT": True,			# By pass STT
 	"ByPassTTS": True,			# By pass TTS
+	"STT_BYPASS_MSG": "Is there any new device ?",
 }
 
 STATE_IDLE=0

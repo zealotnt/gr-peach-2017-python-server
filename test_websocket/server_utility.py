@@ -1,8 +1,5 @@
 import sys, os
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.backends import default_backend
-import alsaaudio
 import wave
 from optparse import OptionParser, OptionGroup
 
@@ -47,11 +44,6 @@ def dump_hex(data, desc_str="", token=":", prefix="", preFormat=""):
 	to_write = desc_str + token.join(prefix+"{:02x}".format(ord(c)) for c in data) + "\r\n"
 	sys.stdout.write(to_write)
 
-def DoHash(binary_data):
-	hashEngine = hashes.Hash(hashes.SHA1(), backend=default_backend())
-	hashEngine.update(binary_data)
-	return hashEngine.finalize()
-
 def AudioDualToMono(in_data):
 	new_data = bytearray()
 	for idx, data in enumerate(in_data):
@@ -68,7 +60,7 @@ def SpeechToText(speech_file):
 	from google.cloud.speech import types
 	print_noti("[SpeechToText] Entry")
 	if globalConfig["ByPassSTT"] == True:
-		ret = "Is there any new device ?"
+		ret = globalConfig["STT_BYPASS_MSG"]
 		print_noti("[SpeechToText] Bypass %s" % ret)
 		return ret
 	client = speech.SpeechClient()

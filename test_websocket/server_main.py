@@ -1,8 +1,5 @@
 import sys, os
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.backends import default_backend
-import alsaaudio
 import wave
 from optparse import OptionParser, OptionGroup
 
@@ -135,45 +132,95 @@ def HTTPServerDialogFloWebhook():
 	device = ''
 	numDevice = 1
 	status = ''
+	action = {}
+	isSuccess = False
 
+	# Set action for board
 	if intent == "Conversion.device.add":
-		output = "There is %d new device. Do you want to name it? \n" % numDevice
+		action = {
+			"state": "get-action-json",
+			"todo": {
+				"action": "scan",
+				"to": "new-device"
+			}
+		}
 	elif intent == "Conversion.device.add - yes - nameing - yes":
 		device = req["result"]["contexts"][0]["parameters"]['Device']
-		output = "Awesome, I added " + device + " to our network.\n"
+		action = {
+			"state": "get-action-json",
+			"todo": {
+				"action": "add",
+				"to": device
+			}
+		}
 	elif intent == "smarthome.device.switch.check":
 		device = req["result"]["parameters"]['Device']
-		status = "turn on"
-		output = "The " + device + " was " + status
+		action = {
+			"state": "get-action-json",
+			"todo": {
+				"action": "check",
+				"to": device
+			}
+		}
 	elif intent == "smarthome.device.switch.off":
 		device = req["result"]["parameters"]['Device']
-		output = "The " + device + " currently was turn off"
+		action = {
+			"state": "get-action-json",
+			"todo": {
+				"action": "turn-on",
+				"to": device
+			}
+		}
 	elif intent == "smarthome.device.switch.on":
 		device = req["result"]["parameters"]['Device']
+		action = {
+			"state": "get-action-json",
+			"todo": {
+				"action": "turn-off",
+				"to": device
+			}
+		}
+	else:
+		output = "error"
+
+	grStateMachine.SetNLPOutCome(action)
+
+	print ("xong nhiem vu")
+	# Wait for POST response from board
+	while True:
+		result = grStateMachine.WaitGrAction()
+		break
+	# process the response
+	isSuccess = result["isSuccess"]
+
+	# build output message
+	if intent == "Conversion.device.add":
+		if isSuccess == True:
+			numDevice = result["numDevice"]
+			if numDevice == 0:
+				output = "There is no new device.\n" % numDevice
+			elif numDevice == 1:
+				output = "There is %d new device. Do you want to name it? \n" % numDevice
+			elif numDevice >= 2:
+				output = "There is %d new device. You should only connect one device \n" % numDevice
+		else:
+			output = "There is no new device.\n" % numDevice
+	elif intent == "Conversion.device.add - yes - nameing - yes":
+		if isSuccess == True:
+			output = "Awesome, I added " + device + " to our network.\n"
+		else:
+			output = "Sorry, We couldn't add " + device + " to our network.\n"
+	elif intent == "smarthome.device.switch.check":
+		status = result["status"]
+		output = "The " + device + " was " + status
+	elif intent == "smarthome.device.switch.off":
+		output = "The " + device + " currently was turn off"
+	elif intent == "smarthome.device.switch.on":
 		output = "The " + device + " currently was turn on"
 	else:
 		output = "error"
 	res = {'speech': output, 'displayText': output}
 
-	results = {}
-	if isWaitAction:
-		# TODO: action what ?
-		results = {
-			"state": "get-action-json",
-			"todo": {
-				"action": "on",
-				"to": "fan"
-			}
-		}
-		grStateMachine.SetNLPOutCome(results)
-
-		print ("xong nhiem vu")
-		# Wait for POST response from board
-		while True:
-			pass
-		# process the response
-
-		# build output message
 
 	return make_response(jsonify(res))
 
