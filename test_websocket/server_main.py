@@ -62,7 +62,7 @@ class SimpleEcho(WebSocket):
 			return
 
 		self.count += 1
-		if self.count > 0:
+		if self.count > 5:
 			sys.stdout.write('.')
 			sys.stdout.flush()
 			self.count = 0
@@ -74,7 +74,7 @@ class SimpleEcho(WebSocket):
 	def handleConnected(self):
 		# self.address
 		ret = self.grStateMachine.HandleGetState()
-		print_noti("[WsConn] new connection connected - %s" % ret)
+		print_noti("[WsConn] new connection connected - %s - %s" % (ret, stateParseString["%d" % (self.grStateMachine.State)]))
 		if ret == "done-wake-word" or ret == "stream-cmd":
 			self.wavFileWriter.OpenToWrite()
 
@@ -83,7 +83,7 @@ class SimpleEcho(WebSocket):
 		self.wavFileWriter.Close()
 		self.grStateMachine.HandleWsClosed(nlpServiceInst, self.wavFileWriter)
 		ret = self.grStateMachine.HandleGetState()
-		print_noti("[WsConn] connection closed - %s" % ret)
+		print_noti("[WsConn] connection closed - %s - %s" % (ret, stateParseString["%d" % (self.grStateMachine.State)]))
 
 @APP.route('/', methods=['GET'])
 def HTTPServeGetStatus():
@@ -93,9 +93,18 @@ def HTTPServeGetStatus():
 	grStateMachine = GrPeachStateMachine()
 	print_noti("[HTTP-GET] STATUS ENTRY")
 	ret = grStateMachine.HandleGetState()
-	print_noti("[HTTP-GET] STATUS - %s" % ret)
+	print_noti("[HTTP-GET] STATUS - %s - %s" % (ret, stateParseString["%d" % (grStateMachine.State)]))
 
 	return make_response(jsonify(ret))
+
+@APP.route('/test-ep', methods=['POST'])
+def HTTPServerTestEpChangeSTTMessage():
+	req = request.get_json(silent=True, force=True)
+	obj = request.form.to_dict(flat=False)
+	print obj
+	globalConfig["STT_BYPASS_MSG"] = obj["STT"]
+	res = {'status': obj["STT"]}
+	return make_response(jsonify(res))
 
 @APP.route('/status/update', methods=['POST'])
 def HTTPServeUpdateDeviceStatus():
@@ -129,6 +138,7 @@ def HTTPServerDialogFloWebhook():
 
 	intent = req["result"]["metadata"]["intentName"]
 
+	db = GrPeachDatabase()
 	grStateMachine = GrPeachStateMachine()
 	isWaitAction = False
 	statement = "intent: "
@@ -137,25 +147,29 @@ def HTTPServerDialogFloWebhook():
 	status = ''
 	action = {}
 	isSuccess = False
+	result = {}
 
 	# Set action for board
 	if intent == "Conversion.device.add":
-		action = {
-			"state": "get-action-json",
-			"todo": {
-				"action": "scan",
-				"to": "new-device"
-			}
-		}
+		result["numDevice"] = db.GetNumNewDevice()
+		result["isSuccess"] = True
+		# action = {
+		# 	"state": "get-action-json",
+		# 	"todo": {
+		# 		"action": "scan",
+		# 		"to": "new-device"
+		# 	}
+		# }
 	elif intent == "Conversion.device.add - yes - nameing - yes":
-		device = req["result"]["contexts"][0]["parameters"]['Device']
-		action = {
-			"state": "get-action-json",
-			"todo": {
-				"action": "add",
-				"to": device
-			}
-		}
+		result["isSuccess"] = True
+		# device = req["result"]["contexts"][0]["parameters"]['Device']
+		# action = {
+		# 	"state": "get-action-json",
+		# 	"todo": {
+		# 		"action": "add",
+		# 		"to": device
+		# 	}
+		# }
 	elif intent == "smarthome.device.switch.check":
 		device = req["result"]["parameters"]['Device']
 		action = {
@@ -165,6 +179,7 @@ def HTTPServerDialogFloWebhook():
 				"to": device
 			}
 		}
+		isWaitAction = True
 	elif intent == "smarthome.device.switch.off":
 		device = req["result"]["parameters"]['Device']
 		action = {
@@ -174,6 +189,7 @@ def HTTPServerDialogFloWebhook():
 				"to": device
 			}
 		}
+		isWaitAction = True
 	elif intent == "smarthome.device.switch.on":
 		device = req["result"]["parameters"]['Device']
 		action = {
@@ -183,16 +199,16 @@ def HTTPServerDialogFloWebhook():
 				"to": device
 			}
 		}
+		isWaitAction = True
 	else:
 		output = "error"
 
-	grStateMachine.SetNLPOutCome(action)
+	if isWaitAction:
+		grStateMachine.SetNLPOutCome(action)
 
-	print ("xong nhiem vu")
-	# Wait for POST response from board
-	while True:
+		# Wait for POST response from board
 		result = grStateMachine.WaitGrAction()
-		break
+
 	# process the response
 	isSuccess = result["isSuccess"]
 
@@ -201,16 +217,18 @@ def HTTPServerDialogFloWebhook():
 		if isSuccess == True:
 			numDevice = result["numDevice"]
 			if numDevice == 0:
-				output = "There is no new device.\n" % numDevice
+				output = "There is no new device.\n"
 			elif numDevice == 1:
 				output = "There is %d new device. Do you want to name it? \n" % numDevice
 			elif numDevice >= 2:
 				output = "There is %d new device. You should only connect one device \n" % numDevice
 		else:
-			output = "There is no new device.\n" % numDevice
+			output = "There is no new device.\n"
 	elif intent == "Conversion.device.add - yes - nameing - yes":
 		if isSuccess == True:
 			output = "Awesome, I added " + device + " to our network.\n"
+			new_device = {"name": device, "ip": db.GetLastUniqueNewDevice()}
+			db.AddDevice(new_device)
 		else:
 			output = "Sorry, We couldn't add " + device + " to our network.\n"
 	elif intent == "smarthome.device.switch.check":
@@ -223,7 +241,7 @@ def HTTPServerDialogFloWebhook():
 	else:
 		output = "error"
 	res = {'speech': output, 'displayText': output}
-
+	print res
 
 	return make_response(jsonify(res))
 

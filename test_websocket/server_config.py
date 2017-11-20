@@ -38,6 +38,17 @@ globalConfig = {
 	"STT_BYPASS_MSG": "Is there any new device ?",
 }
 
+stateParseString = {
+	"0": "STATE_IDLE",
+	"1": "STATE_WW_DONE",
+	"2": "STATE_RCV_CMD",
+	"3": "STATE_PREPARE_PLAYING",
+	"4": "STATE_ANALYZING",
+	"5": "STATE_PLAYING",
+	"6": "STATE_JSON_ACTION",
+	"7": "STATE_PLAYDONE"
+}
+
 STATE_IDLE=0
 STATE_WW_DONE=1
 STATE_RCV_CMD=2

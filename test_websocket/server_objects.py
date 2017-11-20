@@ -242,12 +242,13 @@ class GrPeachStateMachine(object):
 			ret = 'done-wake-word'
 		elif self.State == STATE_RCV_CMD:
 			ret = 'stream-cmd'
+			self.ClearNLPOutcomeEvent()
 		elif self.State == STATE_PREPARE_PLAYING:
 			ret = 'prepare-playing'
 			self.SetState(STATE_ANALYZING)
+			self.ClearNLPOutcomeEvent()
 		elif self.State == STATE_ANALYZING:
 			outcomeObj = self.WaitNLPOutcome()
-			print("xong nv 2")
 			ret = outcomeObj["state"]
 			if "todo" in outcomeObj:
 				todo = outcomeObj["todo"]
@@ -271,6 +272,9 @@ class GrPeachStateMachine(object):
 	def GetLastState(self):
 		return self.LastState
 
+	def ClearNLPOutcomeEvent(self):
+		self.eventWaitOutcome.clear()
+
 	def WaitNLPOutcome(self):
 		self.eventWaitOutcome.wait()
 		self.eventWaitOutcome.clear()
@@ -293,6 +297,7 @@ class GrPeachDatabase(object):
 	__metaclass__ = Singleton
 	devices = []
 	listAllIp = []
+	lastUniqueNewDevice = ""
 
 	def AddFoundIp(self, ip):
 		if ip in self.listAllIp:
@@ -301,15 +306,27 @@ class GrPeachDatabase(object):
 
 	def GetNumNewDevice(self):
 		new = 0
+		ip_new_str = ""
 		for ip in self.listAllIp:
 			ip_new = True
-			for device in devices:
+			for device in self.devices:
 				if ip == device["ip"]:
 					ip_new = False
+					print ("[DB] %s is old" % ip)
 					break
 			if ip_new == True:
+				ip_new_str = ip
 				new += 1
+				print ("[DB] found 1 new device")
+		if new == 1:
+			self.lastUniqueNewDevice = ip_new_str
 		return new
+
+	def SetLastUniqueNewDevice(self, ip):
+		self.lastUniqueNewDevice = ip
+
+	def GetLastUniqueNewDevice(self):
+		return self.lastUniqueNewDevice
 
 	def SetDeviceName(self, name, ip):
 		for device in self.devices:
