@@ -233,7 +233,7 @@ class GrPeachStateMachine(object):
 		self.stateChangeMux.release()
 
 	def HandleGetState(self):
-		print_noti("[HTTP-GET] In HandleGetState")
+		print_noti("In HandleGetState")
 		self.stateChangeMux.acquire()
 		ret = "idle"
 		if self.State == STATE_WW_DONE:

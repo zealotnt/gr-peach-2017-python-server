@@ -68,8 +68,9 @@ def SpeechToText(speech_file):
 	from google.cloud.speech import types
 	print_noti("[SpeechToText] Entry")
 	if globalConfig["ByPassSTT"] == True:
-		print_noti("[SpeechToText] Bypass")
-		return "Hello"
+		ret = "Is there any new device ?"
+		print_noti("[SpeechToText] Bypass %s" % ret)
+		return ret
 	client = speech.SpeechClient()
 
 	# [START migration_sync_request]
@@ -130,7 +131,7 @@ def RequestDialogflow(speechIn):
 	response = request.getresponse()
 	response_text = response.read()
 	obj = json.loads(response_text)
-	print json.dumps(obj, indent=4, sort_keys=True)
+	print "[RequestDialogflow]", json.dumps(obj, indent=4, sort_keys=True)
 	return obj
 
 def DoAction(obj, state_machine):

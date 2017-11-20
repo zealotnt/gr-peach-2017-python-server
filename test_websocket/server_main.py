@@ -92,6 +92,7 @@ def HTTPServeGetStatus():
 	# req = request.get_json(silent=True, force=True)
 	# action = req.get('result').get('action')
 	grStateMachine = GrPeachStateMachine()
+	print_noti("[HTTP-GET] STATUS ENTRY")
 	ret = grStateMachine.HandleGetState()
 	print_noti("[HTTP-GET] STATUS - %s" % ret)
 
@@ -120,12 +121,54 @@ def HTTPServeAudio():
 	except Exception as e:
 		return str(e)
 
+@APP.route('/dialogflow-webhook', methods=['POST'])
+def HTTPServerDialogFloWebhook():
+	# Get request parameters
+	req = request.get_json(silent=True, force=True)
+	print "[HTTPServerDialogFloWebhook] ", json.dumps(req, indent=4, sort_keys=True)
+
+	intent = req["result"]["metadata"]["intentName"]
+
+	grStateMachine = GrPeachStateMachine()
+	isWaitAction = False
+	statement = "intent: "
+	device = ''
+	numDevice = 1
+	status = ''
+
+	if intent == "Conversion.device.add":
+		output = "There is %d new device. Do you want to name it? \n" % numDevice
+	elif intent == "Conversion.device.add - yes - nameing - yes":
+		device = req["result"]["contexts"][0]["parameters"]['Device']
+		output = "Awesome, I added " + device + " to our network.\n"
+	elif intent == "smarthome.device.switch.check":
+		device = req["result"]["parameters"]['Device']
+		status = "turn on"
+		output = "The " + device + " was " + status
+	elif intent == "smarthome.device.switch.off":
+		device = req["result"]["parameters"]['Device']
+		output = "The " + device + " currently was turn off"
+	elif intent == "smarthome.device.switch.on":
+		device = req["result"]["parameters"]['Device']
+		output = "The " + device + " currently was turn on"
+	else:
+		output = "error"
+	res = {'speech': output, 'displayText': output}
+
+	results = {}
+	if isWaitAction:
+		# TODO: action what ?
+		results = {"state": "get-action-json"}
+
+	return make_response(jsonify(res))
+
 def RunFlaskServer():
 	global APP
 	APP.run(
 		# debug=True,
 		port=8080,
-		host='0.0.0.0'
+		host='0.0.0.0',
+		threaded=True
 	)
 
 def RunWsServer():
@@ -174,6 +217,7 @@ class NLPService():
 			TextToSpeech(text_resp)
 			results = {'state': "play-audio"}
 			self.grStateMachine.SetNLPOutCome(results)
+			print_noti("[NLPService] Done")
 
 def main():
 	parser = OptionParser(
