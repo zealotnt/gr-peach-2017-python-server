@@ -1,3 +1,4 @@
 SimpleWebSocketServer/*
 *.wav
 .env
+*.mp3
