@@ -152,7 +152,7 @@ def RequestDialogflow(speechIn):
 	print json.dumps(obj, indent=4, sort_keys=True)
 	return obj
 
-def DoAction(obj):
+def DoAction(obj, state_machine):
 	if globalConfig["TestV1"] == True:
 		return
 	if obj == None:
@@ -161,6 +161,7 @@ def DoAction(obj):
 
 	device = ''
 	# intent = obj["body"]["result"]["metadata"]["intentName"]
+	state_machine.SetState(STATE_JSON_ACTION)
 
 	response_text = obj["result"]["fulfillment"]["speech"]
 	print ("[Response-Text]: %s%s%s" % (bcolors.OKGREEN + bcolors.BOLD, response_text, bcolors.ENDC))
@@ -178,6 +179,7 @@ STATE_WW_DONE=1
 STATE_RCV_CMD=2
 STATE_PREPARE_PLAYING=3
 STATE_PLAYING=4
+STATE_JSON_ACTION=5
 STATE_PLAYDONE=5
 
 class GrPeachStateMachine(object):
@@ -427,7 +429,7 @@ class SimpleEcho(WebSocket):
 		print_noti("[WsConn] connection closed - %s" % ret)
 
 @APP.route('/', methods=['GET'])
-def webhook():
+def HTTPServeGetStatus():
 	# Get request parameters
 	# req = request.get_json(silent=True, force=True)
 	# action = req.get('result').get('action')
@@ -438,7 +440,7 @@ def webhook():
 	if ret == "play-audio":
 		SpeechRequest = SpeechToText(wavFileWriter.GetLastFile())
 		req_obj = RequestDialogflow(SpeechRequest)
-		VoiceResp = DoAction(req_obj)
+		VoiceResp = DoAction(req_obj, grStateMachine)
 		TextToSpeech(VoiceResp)
 	elif ret == "prepare-playing":
 		grStateMachine.SetState(STATE_PLAYING)
@@ -447,8 +449,12 @@ def webhook():
 
 	return make_response(jsonify(res))
 
+@APP.route('/action')
+def HTTPServeGetAction():
+	return make_response(jsonify(res))
+
 @APP.route('/audio')
-def file_downloads():
+def HTTPServeAudio():
 	try:
 		grStateMachine = GrPeachStateMachine()
 		grStateMachine.HandleDownload()
