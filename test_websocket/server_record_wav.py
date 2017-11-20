@@ -36,7 +36,9 @@ load_dotenv(dotenv_path, verbose=True)
 globalConfig = {
 	"PcmPlayer": False,
 	"WavFileWriter": False,
-	"TestV1": False,
+	"TestV1": False,			# WW 5 ws-stream, CMD 5 ws-stream, play-audio
+	"ByPassSTT": True,			# By pass STT
+	"ByPassTTS": True,			# By pass TTS
 }
 APP = Flask(__name__)
 LOG = APP.logger
@@ -88,6 +90,9 @@ def SpeechToText(speech_file):
 	from google.cloud.speech import enums
 	from google.cloud.speech import types
 	print_noti("[SpeechToText] Entry")
+	if globalConfig["ByPassSTT"] == True:
+		print_noti("[SpeechToText] Bypass")
+		return "Hello"
 	client = speech.SpeechClient()
 
 	# [START migration_sync_request]
@@ -123,6 +128,9 @@ def TextToSpeech(textIn):
 		return
 	from gtts import gTTS
 	print_noti("[TextToSpeech] Entry")
+	if globalConfig["ByPassTTS"] == True:
+		print_noti("[TextToSpeech] Bypass")
+		return
 	print "[TextToSpeech] %s" % (textIn)
 	tts = gTTS(text=textIn, lang='en-us')
 	tts.save("file.mp3")
@@ -396,7 +404,7 @@ class SimpleEcho(WebSocket):
 			return
 
 		self.count += 1
-		if self.count > 5:
+		if self.count > 0:
 			sys.stdout.write('.')
 			sys.stdout.flush()
 			self.count = 0
@@ -425,6 +433,7 @@ def webhook():
 	# action = req.get('result').get('action')
 	grStateMachine = GrPeachStateMachine()
 	ret = grStateMachine.HandleGetState()
+	print_noti("[HTTP-GET] STATUS - %s" % ret)
 	wavFileWriter = WavFileWriter()
 	if ret == "play-audio":
 		SpeechRequest = SpeechToText(wavFileWriter.GetLastFile())
