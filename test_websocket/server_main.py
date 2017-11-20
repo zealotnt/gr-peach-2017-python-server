@@ -154,14 +154,30 @@ def RunSnowboy():
 					sleep_time=0.03)
 	detector.terminate()
 
-def NLPService():
+class NLPService():
+	__metaclass__ = Singleton
 	grStateMachine = GrPeachStateMachine()
+	eventEnable = threading.Event()
+	eventEnable.clear()
+	speechFile = ""
 
-	while True:
-		text_cmd = SpeechToText()
-		text_resp = RequestDialogflow(text_cmd)
-		grStateMachine.SetState(STATE_PLAYING)
-		TextToSpeech(text_resp)
+	def SetRun(self, speechFile):
+		self.speechFile = speechFile
+		self.eventEnable.set()
+
+	def GetRun(self):
+		self.eventEnable.wait()
+		self.eventEnable.clear()
+		return self.speechFile
+
+	def run(self):
+		print_noti("NLPService Started")
+		while True:
+			speechFile = self.GetRun()
+			text_cmd = SpeechToText(speechFile)
+			text_resp = RequestDialogflow(text_cmd)
+			grStateMachine.SetState(STATE_PLAYING)
+			TextToSpeech(text_resp)
 
 def main():
 	parser = OptionParser(
@@ -187,6 +203,9 @@ def main():
 		globalConfig["WavFileWriter"] = True
 	print(globalConfig)
 
+	nlpServiceInst = NLPService()
+	nlpService = threading.Thread(target=nlpServiceInst.run)
+	nlpService.start()
 	wsServer = threading.Thread(target=RunWsServer)
 	wsServer.start()
 	snowBoyRunner = threading.Thread(target=RunSnowboy)

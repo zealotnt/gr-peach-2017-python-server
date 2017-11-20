@@ -175,9 +175,13 @@ class GrPeachStateMachine(object):
 	RcvVoiceCmd = False
 	DoneStream = False
 	stateChangeMux = threading.Lock()
+	eventWaitOutcome = threading.Event()
+	eventWaitOutcome.clear()
+	outcomeResult = []
 	Count = 0
 	SpeechRequest = ""
 	State = STATE_IDLE
+	LastState = STATE_IDLE
 
 	def HandleWakeWordCallback(self):
 		self.SetState(STATE_WW_DONE)
@@ -245,4 +249,17 @@ class GrPeachStateMachine(object):
 		self.SetState(STATE_IDLE)
 
 	def SetState(self, state):
+		self.LastState = self.State
 		self.State = state
+
+	def GetLastState(self):
+		return self.LastState
+
+	def WaitNLPOutcome(self):
+		self.eventWaitOutcome.wait()
+		self.eventWaitOutcome.clear()
+		return self.outcomeResult
+
+	def SetNLPOutCome(self, result):
+		self.outcomeResult = result
+		self.eventWaitOutcome.set()

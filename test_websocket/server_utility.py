@@ -142,7 +142,7 @@ def DoAction(obj, state_machine):
 
 	device = ''
 	# intent = obj["body"]["result"]["metadata"]["intentName"]
-	state_machine.SetState(STATE_JSON_ACTION)
+	# state_machine.SetState(STATE_JSON_ACTION)
 
 	response_text = obj["result"]["fulfillment"]["speech"]
 	print ("[Response-Text]: %s%s%s" % (bcolors.OKGREEN + bcolors.BOLD, response_text, bcolors.ENDC))
