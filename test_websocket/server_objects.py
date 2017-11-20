@@ -226,7 +226,7 @@ class GrPeachStateMachine(object):
 
 	def HandleWsClosed(self, nlpServiceInst, wavWriterInst):
 		self.stateChangeMux.acquire()
-		if self.State == STATE_RCV_CMD and self.Count > 0:
+		if self.State == STATE_RCV_CMD and self.Count > 10:
 			print_noti("Close cause end command")
 			self.Count = 0
 			self.SetState(STATE_PREPARE_PLAYING)
@@ -294,11 +294,21 @@ class GrPeachStateMachine(object):
 		self.grAction = result
 		self.eventWaitGrAction.set()
 
+def PingIp(ip):
+	response = os.system("fping -c1 -t400 " + ip)
+
+	#and then check the response...
+	if response == 0:
+		return True
+	else:
+		return False
+
 class GrPeachDatabase(object):
 	__metaclass__ = Singleton
 	devices = []
 	listAllIp = []
 	lastUniqueNewDevice = ""
+	removeList = []
 
 	def AddFoundIp(self, ip):
 		if ip in self.listAllIp:
@@ -308,6 +318,20 @@ class GrPeachDatabase(object):
 	def GetNumNewDevice(self):
 		new = 0
 		ip_new_str = ""
+		for ip in self.removeList:
+			if PingIp(ip) == True:
+				self.listAllIp.append(ip)
+				index = self.removeList.index(ip)
+				self.removeList = self.removeList[:index] + self.removeList[index+1 :]
+				print_noti ("[Detector] Found %s back" % ip)
+		for ip in self.listAllIp:
+			if PingIp(ip) == False:
+				self.removeList.append(ip)
+		for ip in self.removeList:
+			index = self.listAllIp.index(ip)
+			self.listAllIp = self.listAllIp[:index] + self.listAllIp[index+1 :]
+			print_noti ("[Detector] Remove %s" % ip)
+
 		for ip in self.listAllIp:
 			ip_new = True
 			for device in self.devices:

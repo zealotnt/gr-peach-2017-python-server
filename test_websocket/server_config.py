@@ -33,9 +33,9 @@ globalConfig = {
 	"PcmPlayer": False,
 	"WavFileWriter": False,
 	"TestV1": False,			# WW 5 ws-stream, CMD 5 ws-stream, play-audio
-	"ByPassSTT": True,			# By pass STT
-	"ByPassTTS": True,			# By pass TTS
-	"STT_BYPASS_MSG": "Is there any new device ?",
+	"ByPassSTT": False,			# By pass STT
+	"ByPassTTS": False,			# By pass TTS
+	"STT_BYPASS_MSG": "turn off the fan",
 }
 
 stateParseString = {

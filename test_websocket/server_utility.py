@@ -101,6 +101,8 @@ def TextToSpeech(textIn):
 	if globalConfig["ByPassTTS"] == True:
 		print_noti("[TextToSpeech] Bypass")
 		return
+	if textIn == "" or textIn is None:
+		textIn = "Sorry, I can't hear that"
 	print "[TextToSpeech] %s" % (textIn)
 	tts = gTTS(text=textIn, lang='en-us')
 	tts.save("file.mp3")
@@ -124,7 +126,7 @@ def RequestDialogflow(speechIn):
 	response_text = response.read()
 	obj = json.loads(response_text)
 	print "[RequestDialogflow]", json.dumps(obj, indent=4, sort_keys=True)
-	return obj
+	return obj["result"]["fulfillment"]["messages"][0]["speech"]
 
 def DoAction(obj, state_machine):
 	if globalConfig["TestV1"] == True:

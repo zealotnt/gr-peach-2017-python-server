@@ -75,7 +75,7 @@ class SimpleEcho(WebSocket):
 		# self.address
 		ret = self.grStateMachine.HandleGetState()
 		print_noti("[WsConn] new connection connected - %s - %s" % (ret, stateParseString["%d" % (self.grStateMachine.State)]))
-		if ret == "done-wake-word" or ret == "stream-cmd":
+		if self.grStateMachine.State ==  STATE_RCV_CMD:
 			self.wavFileWriter.OpenToWrite()
 
 	def handleClose(self):
@@ -91,9 +91,9 @@ def HTTPServeGetStatus():
 	# req = request.get_json(silent=True, force=True)
 	# action = req.get('result').get('action')
 	grStateMachine = GrPeachStateMachine()
-	print_noti("[HTTP-GET] STATUS ENTRY")
+	print_ok("[HTTP-GET] STATUS ENTRY")
 	ret = grStateMachine.HandleGetState()
-	print_noti("[HTTP-GET] STATUS - %s - %s" % (ret, stateParseString["%d" % (grStateMachine.State)]))
+	print_ok("[HTTP-GET] STATUS - %s - %s" % (ret, stateParseString["%d" % (grStateMachine.State)]))
 
 	return make_response(jsonify(ret))
 
@@ -151,6 +151,7 @@ def HTTPServerDialogFloWebhook():
 	isSuccess = False
 	result = {}
 	output = ""
+	contextOut = ''
 
 	# Set action for board
 	if intent == "Conversion.device.add":
@@ -165,7 +166,7 @@ def HTTPServerDialogFloWebhook():
 		# }
 	elif intent == "Conversion.device.add - yes - nameing - yes":
 		result["isSuccess"] = True
-		# device = req["result"]["contexts"][0]["parameters"]['Device']
+		device = req["result"]["contexts"][0]["parameters"]['Device']
 		# action = {
 		# 	"state": "get-action-json",
 		# 	"todo": {
@@ -221,15 +222,18 @@ def HTTPServerDialogFloWebhook():
 
 		# Wait for POST response from board
 		result = grStateMachine.WaitGrAction()
-
-	# process the response
-	isSuccess = result["isSuccess"]
+		print ("grStateMachine.WaitGrAction()", result)
+	else:
+		print_noti("No wait")
 
 	# If we already have output, return right away
 	if output != "":
 		res = {'speech': output, 'displayText': output}
 		print res
 		return make_response(jsonify(res))
+
+	# process the response
+	isSuccess = result["isSuccess"]
 
 	# build output message
 	if intent == "Conversion.device.add":
@@ -239,6 +243,7 @@ def HTTPServerDialogFloWebhook():
 				output = "There is no new device.\n"
 			elif numDevice == 1:
 				output = "There is %d new device. Do you want to name it? \n" % numDevice
+				contextOut = [{"lifespan": 2, "name": "Conversiondeviceadd-followup"}];
 			elif numDevice >= 2:
 				output = "There is %d new device. You should only connect one device \n" % numDevice
 		else:
@@ -251,15 +256,27 @@ def HTTPServerDialogFloWebhook():
 		else:
 			output = "Sorry, We couldn't add " + device + " to our network.\n"
 	elif intent == "smarthome.device.switch.check":
-		status = result["status"]
-		output = "The " + device + " was " + status
+		if isSuccess == False:
+			output = "Sorry, We couldn't get status of " + device
+		else:
+			status = result["status"]
+			output = "The " + device + " was " + status
 	elif intent == "smarthome.device.switch.off":
-		output = "The " + device + " currently was turn off"
+		if isSuccess == False:
+			output = "Sorry, We couldn't turn off the " + device
+		else:
+			output = "The " + device + " currently was turn off"
 	elif intent == "smarthome.device.switch.on":
-		output = "The " + device + " currently was turn on"
+		if isSuccess == False:
+			output = "Sorry, We couldn't turn on the " + device
+		else:
+			output = "The " + device + " currently was turn on"
 	else:
 		output = "error"
-	res = {'speech': output, 'displayText': output}
+	if contextOut != '':
+		res = {'speech': output, 'displayText': output, 'contextOut': contextOut}
+	else:
+		res = {'speech': output, 'displayText': output}
 	print res
 
 	return make_response(jsonify(res))
@@ -283,7 +300,7 @@ def RunSnowboy():
 	snowboydecoder.AddChainCallback(commObject.WakeWordCallBack)
 	snowboydecoder.AddChainCallback(snowboydecoder.play_audio_file)
 	detector = snowboydecoder.HotwordDetector(	"./snowboy.umdl",
-												sensitivity=1,
+												sensitivity=0.9,
 												enableGrPeach=True,
 												audioCommObject=commObject)
 	print('Snowboy started')
