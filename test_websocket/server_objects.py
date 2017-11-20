@@ -223,15 +223,17 @@ class GrPeachStateMachine(object):
 		return False
 
 
-	def HandleWsClosed(self):
+	def HandleWsClosed(self, nlpServiceInst, wavWriterInst):
 		self.stateChangeMux.acquire()
 		if self.State == STATE_RCV_CMD and self.Count > 0:
 			print_noti("Close cause end command")
 			self.Count = 0
 			self.SetState(STATE_PREPARE_PLAYING)
+			nlpServiceInst.SetRun(wavWriterInst.GetLastFile())
 		self.stateChangeMux.release()
 
 	def HandleGetState(self):
+		print_noti("[HTTP-GET] In HandleGetState")
 		self.stateChangeMux.acquire()
 		ret = "idle"
 		if self.State == STATE_WW_DONE:
@@ -240,8 +242,13 @@ class GrPeachStateMachine(object):
 			ret = 'stream-cmd'
 		elif self.State == STATE_PREPARE_PLAYING:
 			ret = 'prepare-playing'
+			self.SetState(STATE_ANALYZING)
+		elif self.State == STATE_ANALYZING:
+			outcomeObj = self.WaitNLPOutcome()
+			ret = outcomeObj["state"]
 		elif self.State == STATE_PLAYING:
 			ret = 'play-audio'
+
 		self.stateChangeMux.release()
 		return ret
 

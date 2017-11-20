@@ -44,9 +44,10 @@ STATE_IDLE=0
 STATE_WW_DONE=1
 STATE_RCV_CMD=2
 STATE_PREPARE_PLAYING=3
-STATE_PLAYING=4
-STATE_JSON_ACTION=5
-STATE_PLAYDONE=6
+STATE_ANALYZING=4
+STATE_PLAYING=5
+STATE_JSON_ACTION=6
+STATE_PLAYDONE=7
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path, verbose=True)

@@ -80,8 +80,9 @@ class SimpleEcho(WebSocket):
 			self.wavFileWriter.OpenToWrite()
 
 	def handleClose(self):
+		nlpServiceInst = NLPService()
 		self.wavFileWriter.Close()
-		self.grStateMachine.HandleWsClosed()
+		self.grStateMachine.HandleWsClosed(nlpServiceInst, self.wavFileWriter)
 		ret = self.grStateMachine.HandleGetState()
 		print_noti("[WsConn] connection closed - %s" % ret)
 
@@ -93,14 +94,6 @@ def HTTPServeGetStatus():
 	grStateMachine = GrPeachStateMachine()
 	ret = grStateMachine.HandleGetState()
 	print_noti("[HTTP-GET] STATUS - %s" % ret)
-	wavFileWriter = WavFileWriter()
-	if ret == "play-audio":
-		SpeechRequest = SpeechToText(wavFileWriter.GetLastFile())
-		req_obj = RequestDialogflow(SpeechRequest)
-		VoiceResp = DoAction(req_obj, grStateMachine)
-		TextToSpeech(VoiceResp)
-	elif ret == "prepare-playing":
-		grStateMachine.SetState(STATE_PLAYING)
 
 	res = {'action': ret}
 
@@ -171,13 +164,16 @@ class NLPService():
 		return self.speechFile
 
 	def run(self):
-		print_noti("NLPService Started")
+		print_noti("[NLPService] Started")
 		while True:
 			speechFile = self.GetRun()
+			print_noti("[NLPService] Triggered")
 			text_cmd = SpeechToText(speechFile)
 			text_resp = RequestDialogflow(text_cmd)
-			grStateMachine.SetState(STATE_PLAYING)
+			self.grStateMachine.SetState(STATE_PLAYING)
 			TextToSpeech(text_resp)
+			results = {'state': "play-audio"}
+			self.grStateMachine.SetNLPOutCome(results)
 
 def main():
 	parser = OptionParser(
