@@ -3,6 +3,8 @@ from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 import wave
 from optparse import OptionParser, OptionGroup
 
+from binascii import hexlify
+from zeroconf import ServiceBrowser, Zeroconf
 import json
 import random
 from httplib import HTTPException
@@ -45,7 +47,7 @@ class SimpleEcho(WebSocket):
 	def __init__(self, *args, **kwargs):
 		super(SimpleEcho, self).__init__( *args, **kwargs)
 		self.wavFileWriter = WavFileWriter()
-		self.pcmPlayer = PcmPlayer()
+		# self.pcmPlayer = PcmPlayer()
 		self.comm = AudioProducer()
 		self.sttStreamer = SpeechToTextProducer()
 		self.grStateMachine = GrPeachStateMachine()
@@ -65,7 +67,7 @@ class SimpleEcho(WebSocket):
 			sys.stdout.flush()
 			self.count = 0
 		self.wavFileWriter.ExtendData(self.data)
-		self.pcmPlayer.WriteAudio(self.data)
+		# self.pcmPlayer.WriteAudio(self.data)
 		# self.sttStreamer.Fill_buffer(self.data)
 		self.comm.SetData(self.data)
 
@@ -106,7 +108,8 @@ def HTTPServeUpdateDeviceStatus():
 def HTTPServeGetAction():
 	req = request.get_json(silent=True, force=True)
 	print "[HTTPServeGetAction]", json.dumps(req, indent=4, sort_keys=True)
-
+	print request.form.to_dict(flat=False)
+	res = {'status': 'ok'}
 	return make_response(jsonify(res))
 
 @APP.route('/audio')
@@ -281,6 +284,24 @@ class NLPService():
 			self.grStateMachine.SetNLPOutCome(results)
 			print_noti("[NLPService] Done")
 
+class DeviceDetectListener:
+
+	def remove_service(self, zeroconf, type, name):
+		print("Service %s removed" % (name,))
+
+	def add_service(self, zeroconf, type, name):
+		info = zeroconf.get_service_info(type, name)
+		# print("Service %s added, service info: %s" % (name, info))
+		addressStr = ""
+		for idx, num in enumerate(info.address):
+			hexNum = hexlify(num)
+			addressStr += "%d" % (int(hexNum, 16))
+			if idx != len(info.address) - 1:
+				addressStr += "."
+		db = GrPeachDatabase()
+		db.AddFoundIp(addressStr)
+		print "Detected: %s" % addressStr
+
 def main():
 	parser = OptionParser(
 			usage='usage: %prog [options] <map-file>',
@@ -312,6 +333,9 @@ def main():
 	wsServer.start()
 	snowBoyRunner = threading.Thread(target=RunSnowboy)
 	snowBoyRunner.start()
+	zeroconf = Zeroconf()
+	listener = DeviceDetectListener()
+	browser = ServiceBrowser(zeroconf, "_arduino._tcp.local.", listener)
 	RunFlaskServer()
 
 if __name__ == "__main__":

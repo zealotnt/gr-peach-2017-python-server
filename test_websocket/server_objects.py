@@ -175,6 +175,8 @@ class GrPeachStateMachine(object):
 	stateChangeMux = threading.Lock()
 	eventWaitOutcome = threading.Event()
 	eventWaitOutcome.clear()
+	eventWaitGrAction = threading.Event()
+	eventWaitGrAction.clear()
 	outcomeResult = []
 	grAction = []
 	Count = 0
@@ -286,3 +288,37 @@ class GrPeachStateMachine(object):
 	def SetGrAction(self, result):
 		self.grAction = result
 		self.eventWaitGrAction.set()
+
+class GrPeachDatabase(object):
+	__metaclass__ = Singleton
+	devices = []
+	listAllIp = []
+
+	def AddFoundIp(self, ip):
+		if ip in self.listAllIp:
+			return
+		self.listAllIp.append(ip)
+
+	def GetNumNewDevice(self):
+		new = 0
+		for ip in self.listAllIp:
+			ip_new = True
+			for device in devices:
+				if ip == device["ip"]:
+					ip_new = False
+					break
+			if ip_new == True:
+				new += 1
+		return new
+
+	def SetDeviceName(self, name, ip):
+		for device in self.devices:
+			if device["ip"] == ip:
+				device["name"] = name
+
+	# def GetDevice
+	def GetDevices(self):
+		return self.devices
+
+	def AddDevice(self, device):
+		self.devices.append(device)
