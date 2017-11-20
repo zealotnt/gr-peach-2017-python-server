@@ -249,6 +249,7 @@ class GrPeachStateMachine(object):
 			self.ClearNLPOutcomeEvent()
 		elif self.State == STATE_ANALYZING:
 			outcomeObj = self.WaitNLPOutcome()
+			print ("self.WaitNLPOutcome()", outcomeObj)
 			ret = outcomeObj["state"]
 			if "todo" in outcomeObj:
 				todo = outcomeObj["todo"]
@@ -332,6 +333,17 @@ class GrPeachDatabase(object):
 		for device in self.devices:
 			if device["ip"] == ip:
 				device["name"] = name
+
+	def IsDeviceNamePresent(self, name):
+		for device in self.devices:
+			if device["name"] == name:
+				return True
+		return False
+
+	def GetDeviceIp(self, name):
+		for device in self.devices:
+			if device["name"] == name:
+				return device["ip"]
 
 	# def GetDevice
 	def GetDevices(self):

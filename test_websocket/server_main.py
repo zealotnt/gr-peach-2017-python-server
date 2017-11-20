@@ -117,7 +117,9 @@ def HTTPServeUpdateDeviceStatus():
 def HTTPServeGetAction():
 	req = request.get_json(silent=True, force=True)
 	print "[HTTPServeGetAction]", json.dumps(req, indent=4, sort_keys=True)
-	print request.form.to_dict(flat=False)
+	# print request.form.to_dict(flat=False)
+	grStateMachine = GrPeachStateMachine()
+	grStateMachine.SetGrAction(req)
 	res = {'status': 'ok'}
 	return make_response(jsonify(res))
 
@@ -148,6 +150,7 @@ def HTTPServerDialogFloWebhook():
 	action = {}
 	isSuccess = False
 	result = {}
+	output = ""
 
 	# Set action for board
 	if intent == "Conversion.device.add":
@@ -172,38 +175,48 @@ def HTTPServerDialogFloWebhook():
 		# }
 	elif intent == "smarthome.device.switch.check":
 		device = req["result"]["parameters"]['Device']
-		action = {
-			"state": "get-action-json",
-			"todo": {
-				"action": "check",
-				"to": device
+		if db.IsDeviceNamePresent(device):
+			action = {
+				"state": "get-action-json",
+				"todo": {
+					"action": "check",
+					"to": db.GetDeviceIp(device)
+				}
 			}
-		}
-		isWaitAction = True
+			isWaitAction = True
+		else:
+			output = "Sorry, we don't have %s" % device
 	elif intent == "smarthome.device.switch.off":
 		device = req["result"]["parameters"]['Device']
-		action = {
-			"state": "get-action-json",
-			"todo": {
-				"action": "turn-on",
-				"to": device
+		if db.IsDeviceNamePresent(device):
+			action = {
+				"state": "get-action-json",
+				"todo": {
+					"action": "off",
+					"to": db.GetDeviceIp(device)
+				}
 			}
-		}
-		isWaitAction = True
+			isWaitAction = True
+		else:
+			output = "Sorry, we don't have %s" % device
 	elif intent == "smarthome.device.switch.on":
 		device = req["result"]["parameters"]['Device']
-		action = {
-			"state": "get-action-json",
-			"todo": {
-				"action": "turn-off",
-				"to": device
+		if db.IsDeviceNamePresent(device):
+			action = {
+				"state": "get-action-json",
+				"todo": {
+					"action": "on",
+					"to": db.GetDeviceIp(device)
+				}
 			}
-		}
-		isWaitAction = True
+			isWaitAction = True
+		else:
+			output = "Sorry, we don't have %s" % device
 	else:
 		output = "error"
 
 	if isWaitAction:
+		print ("grStateMachine.SetNLPOutCome()", action)
 		grStateMachine.SetNLPOutCome(action)
 
 		# Wait for POST response from board
@@ -211,6 +224,12 @@ def HTTPServerDialogFloWebhook():
 
 	# process the response
 	isSuccess = result["isSuccess"]
+
+	# If we already have output, return right away
+	if output != "":
+		res = {'speech': output, 'displayText': output}
+		print res
+		return make_response(jsonify(res))
 
 	# build output message
 	if intent == "Conversion.device.add":
