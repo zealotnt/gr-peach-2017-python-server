@@ -178,6 +178,7 @@ class GrPeachStateMachine(object):
 	eventWaitOutcome = threading.Event()
 	eventWaitOutcome.clear()
 	outcomeResult = []
+	grAction = []
 	Count = 0
 	SpeechRequest = ""
 	State = STATE_IDLE
@@ -236,6 +237,7 @@ class GrPeachStateMachine(object):
 		print_noti("In HandleGetState")
 		self.stateChangeMux.acquire()
 		ret = "idle"
+		todo = {}
 		if self.State == STATE_WW_DONE:
 			ret = 'done-wake-word'
 		elif self.State == STATE_RCV_CMD:
@@ -245,12 +247,19 @@ class GrPeachStateMachine(object):
 			self.SetState(STATE_ANALYZING)
 		elif self.State == STATE_ANALYZING:
 			outcomeObj = self.WaitNLPOutcome()
+			print("xong nv 2")
 			ret = outcomeObj["state"]
+			if "todo" in outcomeObj:
+				todo = outcomeObj["todo"]
 		elif self.State == STATE_PLAYING:
 			ret = 'play-audio'
 
+		resp = {"command": ret}
+		for key, value in todo.iteritems():
+			resp[key] = value
 		self.stateChangeMux.release()
-		return ret
+		print resp
+		return resp
 
 	def HandleDownload(self):
 		self.SetState(STATE_IDLE)
@@ -270,3 +279,12 @@ class GrPeachStateMachine(object):
 	def SetNLPOutCome(self, result):
 		self.outcomeResult = result
 		self.eventWaitOutcome.set()
+
+	def WaitGrAction(self):
+		self.eventWaitGrAction.wait()
+		self.eventWaitGrAction.clear()
+		return self.grAction
+
+	def SetGrAction(self, result):
+		self.grAction = result
+		self.eventWaitGrAction.set()

@@ -96,20 +96,20 @@ def HTTPServeGetStatus():
 	ret = grStateMachine.HandleGetState()
 	print_noti("[HTTP-GET] STATUS - %s" % ret)
 
-	res = {'action': ret}
-
-	return make_response(jsonify(res))
+	return make_response(jsonify(ret))
 
 @APP.route('/status/update', methods=['POST'])
 def HTTPServeUpdateDeviceStatus():
 	req = request.get_json(silent=True, force=True)
-	print json.dumps(req, indent=4, sort_keys=True)
+	print "[HTTPServeUpdateDeviceStatus]", json.dumps(req, indent=4, sort_keys=True)
 	res = {'status': 'ok'}
 	return make_response(jsonify(res))
 
-@APP.route('/action')
+@APP.route('/resp-action', methods=['POST'])
 def HTTPServeGetAction():
-	res = {'action': ''}
+	req = request.get_json(silent=True, force=True)
+	print "[HTTPServeGetAction]", json.dumps(req, indent=4, sort_keys=True)
+
 	return make_response(jsonify(res))
 
 @APP.route('/audio')
@@ -158,7 +158,22 @@ def HTTPServerDialogFloWebhook():
 	results = {}
 	if isWaitAction:
 		# TODO: action what ?
-		results = {"state": "get-action-json"}
+		results = {
+			"state": "get-action-json",
+			"todo": {
+				"action": "on",
+				"to": "fan"
+			}
+		}
+		grStateMachine.SetNLPOutCome(results)
+
+		print ("xong nhiem vu")
+		# Wait for POST response from board
+		while True:
+			pass
+		# process the response
+
+		# build output message
 
 	return make_response(jsonify(res))
 
