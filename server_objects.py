@@ -25,7 +25,7 @@ from server_config import *
 from server_objects import *
 def get_git_root():
 	CURRENT_DIR = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe()))) + os.sep
-	path = CURRENT_DIR
+	path = CURRENT_DIR + "../../"
 	git_repo = git.Repo(path, search_parent_directories=True)
 	git_root = git_repo.git.rev_parse("--show-toplevel")
 	return git_root
